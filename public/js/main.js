@@ -9,7 +9,8 @@ import { TrackLog, TrackPen, REC, TILE } from './track-log.js';
 import { SandrailPhysics, SANDRAIL_SPEC } from './vehicle-physics.js';
 import { SandrailModel } from './sandrail-model.js';
 import { SandParticles } from './particles.js';
-import { EngineAudio } from './audio.js';
+import { GameRecorder } from './recorder.js';
+import { EngineAudio, audioRecordStream } from './audio.js';
 import { NetClient } from './net.js';
 import { AIDriver, resolveCarContacts } from './ai-driver.js';
 import { Weather } from './weather.js';
@@ -377,8 +378,22 @@ async function main() {
     },
     teleport: () => { tpIndex = (tpIndex + 1) % PLACES.length; teleport(PLACES[tpIndex].id); },
     lights: () => { setLights(!lightsOn); toast('Light bars ' + (lightsOn ? 'on' : 'off')); },
+    record: () => toggleRecording(),
     name: () => { const n = prompt('Your driver name', playerName); if (n) { localStorage.setItem('glamis-name', n); location.reload(); } },
   };
+  // ---------- video recorder (K / F8): the 3D view + engine sound, saved to Downloads ----------
+  const recorder = new GameRecorder(renderer.domElement, () => { audio.start(); return audioRecordStream(); }, (on, t) => {
+    const el = $('rec');
+    el.classList.toggle('on', on);
+    el.textContent = 'REC ' + Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+  });
+  recorder.onSaved = (f) => toast(`Saved ${f.name} (${(f.size / 1e6).toFixed(0)} MB) to Downloads`);
+  $('rec').addEventListener('click', () => toggleRecording());
+  function toggleRecording() {
+    if (!GameRecorder.supported()) { toast('This browser cannot record video'); return; }
+    if (recorder.active) recorder.stop();
+    else if (recorder.start()) toast('Recording (' + keyName(binds.record.keys[0]) + ' stops)');
+  }
   function shift(up) {
     if (car.autoTrans) { setSetting('autoTrans', false); toast('Manual gearbox, switch back in the M menu'); }
     if (up) car.input.shiftUp = true; else car.input.shiftDown = true;
@@ -397,7 +412,7 @@ async function main() {
   const KEY_HELP = [['throttle', 'Throttle (1200 hp, feather it)'], ['brake', 'Brake, hold when stopped to reverse'], [['left', 'right'], 'Steer'], ['handbrake', 'Handbrake'],
     ['camera', 'Camera (chase, far, cockpit, hood, side) · drag mouse to look'], ['reset', 'Flip back upright'], ['time', 'Time of day, then night'],
     ['lights', 'LED light bars and whip lights on / off'], ['teleport', 'Teleport to the next hill climb or bowl'], [['shiftDown', 'shiftUp'], 'Shift down / up (manual)'],
-    ['wheelie', 'Wheelie control'], ['assist', 'Countersteer assist'], ['name', 'Set your name'], [['hud', 'help'], 'Hide HUD / this help']];
+    ['wheelie', 'Wheelie control'], ['assist', 'Countersteer assist'], ['name', 'Set your name'], ['record', 'Record a video (saved to Downloads)'], [['hud', 'help'], 'Hide HUD / this help']];
   function renderHelp() {
     const k = (id) => binds[id].keys.filter(Boolean).map(keyName).join(' or ') || '-';
     const rows = KEY_HELP.map(([ids, d]) => `<div><b>${(Array.isArray(ids) ? ids.map(k).join(' · ') : k(ids)).replace(/</g, '&lt;')}</b>${d}</div>`);
@@ -762,7 +777,7 @@ async function main() {
   binds = menu.bindings;
   renderHelp();
   menu.onBindings = renderHelp;
-  menu.onAction = (key, id) => { if (key === 'tp') teleport(id); };
+  menu.onAction = (key, id) => { if (key === 'tp') teleport(id); else if (key === 'rec') { menu.toggle(false); toggleRecording(); } };
   for (const k of ['gravity', 'grip', 'softness']) applySetting(k, settings[k]);
   applySetting('radar', settings.radar);
   applySetting('showHelp', settings.showHelp);

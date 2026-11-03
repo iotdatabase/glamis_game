@@ -23,6 +23,7 @@ export const ACTIONS = [
   { id: 'hud', label: 'Hide HUD', group: 'Other' },
   { id: 'help', label: 'Hide help', group: 'Other' },
   { id: 'name', label: 'Driver name', group: 'Other' },
+  { id: 'record', label: 'Record video on / off', group: 'Other' },
 ];
 
 export const DEFAULT_BINDINGS = {
@@ -43,6 +44,7 @@ export const DEFAULT_BINDINGS = {
   hud: { keys: ['KeyH', null], pad: [null, null] },
   help: { keys: ['F1', 'Slash'], pad: [null, null] },
   name: { keys: ['KeyP', null], pad: [null, null] },
+  record: { keys: ['KeyK', 'F8'], pad: [null, null] },
 };
 
 // keys and buttons that always open the menu, so nobody can lock themselves out

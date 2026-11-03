@@ -44,6 +44,7 @@ export const SCHEMA = [
     { key: 'cockpitFov', label: 'Cockpit field of view', type: 'range', min: 60, max: 90, step: 1, fmt: v => `${v}° (${Math.round(2 * Math.atan(Math.tan(v * Math.PI / 360) * 16 / 9) * 180 / Math.PI)}° wide)`, hint: 'Vertical angle of the cockpit camera' },
     { key: 'invertLook', label: 'Invert look up/down', type: 'choice', options: [[false, 'Off'], [true, 'On']] },
     { key: 'volume', label: 'Sound volume', type: 'range', min: 0, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + '%' },
+    { type: 'actions', key: 'rec', label: 'Video', list: [['toggle', 'Start / stop recording']], hint: 'Records the 3D view and engine sound (no HUD) and saves it to your Downloads. Key K or F8.' },
     { type: 'keys', rows: [
       ['Mouse', 'Drag to look around, scroll to zoom'], ['M or Esc', 'This menu (controller: Start)'],
       ['Controller', 'Right stick looks around. Change any key or button in the Key bindings tab.'],

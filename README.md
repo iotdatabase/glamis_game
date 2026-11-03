@@ -86,9 +86,14 @@ Every control can be changed in **M menu > Key bindings**: each action has two k
 | Hide HUD | `H` |
 | Hide help panel | `F1` or `/` |
 | Driver name | `P` |
+| Record a video on / off (saved to Downloads) | `K` or `F8` |
 | Menu | `M` or `Esc` |
 | Look around | Drag the mouse |
 | Zoom the camera | Mouse wheel |
+
+### Recording videos
+
+Press **K** (or **F8**) to start recording and press it again to stop. You can also use **M menu > Controls > Start / stop recording**, or click the red **REC** timer at the top of the screen. The video is saved to your browser's Downloads folder as `glamis-YYYYMMDD-HHMMSS.mp4` (or `.webm` in browsers that cannot record MP4). It records the 3D view at full resolution with the engine sound, without the HUD, radar or help panel, so the footage is clean. This works in the browser version too.
 
 ### Game controller (Xbox / PlayStation)
 
@@ -125,7 +130,7 @@ All settings are remembered in your browser. Settings marked **shared** are the 
 
 ### Key bindings
 
-Two keyboard keys and two controller inputs for each of the 17 actions in the tables above, plus **Reset all to defaults**.
+Two keyboard keys and two controller inputs for each of the 18 actions in the tables above, plus **Reset all to defaults**.
 
 ### Quality
 

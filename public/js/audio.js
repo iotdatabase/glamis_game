@@ -24,6 +24,14 @@ const IDLE_RPM = 900; // the game's rpm when sitting (idleRpm 1000 less converte
 
 // one AudioContext and one decoded copy of each file, shared by the player's and the bots' engines
 let sharedCtx = null, sharedSamples = null;
+// the in-game video recorder taps the master of every engine (player and computer cars)
+const masters = [];
+let recDest = null;
+export function audioRecordStream() {
+  if (!sharedCtx) return null;
+  if (!recDest) { recDest = sharedCtx.createMediaStreamDestination(); for (const m of masters) m.connect(recDest); }
+  return recDest.stream;
+}
 
 // the server lists assets/audio/ as JSON, so optional files that are not there are never requested
 async function listAudioDir() {
@@ -111,6 +119,7 @@ export class EngineAudio {
     ctx.resume();
     this.ctx = ctx;
     const master = ctx.createGain(); master.gain.value = 0.55 * this.volume; master.connect(ctx.destination);
+    masters.push(master); if (recDest) master.connect(recDest);
     this.master = master;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(master);
     this.comp = comp;
