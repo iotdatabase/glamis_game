@@ -26,6 +26,8 @@ export function loadSettings() {
   if (s.sandTexV !== 2) { s.sandTex = 'all'; s.sandTexV = 2; }
   // the new GLX pro rail: start everyone in it once
   if (s.proCarV !== 1) { s.car = 'pro'; s.proCarV = 1; }
+  // Q / E used to switch to the manual gearbox for good (players got stuck in 1st at ~50 mph): back to automatic once
+  if (s.autoTransV !== 1) { s.autoTrans = true; s.autoTransV = 1; }
   // cockpit field of view: back to the wide 78 deg default (58 / 68 were test defaults, never picked by a player)
   if (s.cockpitFovV !== 3) { if (s.cockpitFov === undefined || [58, 68].includes(Number(s.cockpitFov))) s.cockpitFov = 78; s.cockpitFovV = 3; }
   return { ...DEFAULTS, ...s };
@@ -36,7 +38,7 @@ const fmtTod = (h) => { const hh = Math.floor(h), mm = Math.round((h % 1) * 60);
 
 export const SCHEMA = [
   { tab: 'Controls', items: [
-    { key: 'autoTrans', label: 'Gearbox', type: 'choice', options: [[true, 'Automatic'], [false, 'Manual (Q / E)']] },
+    { key: 'autoTrans', label: 'Gearbox', type: 'choice', options: [[true, 'Automatic'], [false, 'Manual (Q / E)']], hint: 'In automatic, Q / E shift for a few seconds, then it goes back to automatic' },
     { key: 'wheelieControl', label: 'Wheelie control', type: 'choice', options: [[true, 'On'], [false, 'Off (full send)']], hint: 'Key V' },
     { key: 'steerAssist', label: 'Countersteer assist', type: 'choice', options: [[true, 'On'], [false, 'Off']], hint: 'Key G' },
     { key: 'steerSens', label: 'Steering speed', type: 'range', min: 0.5, max: 1.8, step: 0.05, fmt: v => Math.round(v * 100) + '%' },

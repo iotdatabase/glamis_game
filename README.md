@@ -75,7 +75,7 @@ Every control can be changed in **M menu > Key bindings**: each action has two k
 | Brake / reverse (hold when stopped) | `S` or `↓` |
 | Steer left / right | `A` / `D` or `←` / `→` |
 | Handbrake | `Space` |
-| Shift down / up (switches to the manual gearbox) | `Q` / `E` |
+| Shift down / up (in automatic the gearbox takes over again after 3 s; full manual in M > Controls) | `Q` / `E` |
 | Change camera (chase, far, cockpit, hood, side) | `C` |
 | Flip back upright | `R` |
 | Light bars and whip lights on / off | `N` |
@@ -119,7 +119,7 @@ All settings are remembered in your browser. Settings marked **shared** are the 
 
 | Setting | Choices |
 | --- | --- |
-| Gearbox | Automatic, Manual (`Q` / `E`) |
+| Gearbox | Automatic (default; `Q` / `E` shift for 3 s), Manual (`Q` / `E`, an M shows next to the gear) |
 | Wheelie control (shared) | On, Off (full send: you can loop it) |
 | Countersteer assist (shared) | On, Off |
 | Steering speed | 50 to 180 % |

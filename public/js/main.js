@@ -395,7 +395,7 @@ async function main() {
     else if (recorder.start()) toast('Recording (' + keyName(binds.record.keys[0]) + ' stops)');
   }
   function shift(up) {
-    if (car.autoTrans) { setSetting('autoTrans', false); toast('Manual gearbox, switch back in the M menu'); }
+    // in automatic this is a short paddle-shift override (vehicle-physics.js); the full manual gearbox is in M > Controls
     if (up) car.input.shiftUp = true; else car.input.shiftDown = true;
   }
   addEventListener('keydown', (e) => {
@@ -411,7 +411,7 @@ async function main() {
   // help panel lists the player's own keys
   const KEY_HELP = [['throttle', 'Throttle (1200 hp, feather it)'], ['brake', 'Brake, hold when stopped to reverse'], [['left', 'right'], 'Steer'], ['handbrake', 'Handbrake'],
     ['camera', 'Camera (chase, far, cockpit, hood, side) · drag mouse to look'], ['reset', 'Flip back upright'], ['time', 'Time of day, then night'],
-    ['lights', 'LED light bars and whip lights on / off'], ['teleport', 'Teleport to the next hill climb or bowl'], [['shiftDown', 'shiftUp'], 'Shift down / up (manual)'],
+    ['lights', 'LED light bars and whip lights on / off'], ['teleport', 'Teleport to the next hill climb or bowl'], [['shiftDown', 'shiftUp'], 'Shift down / up (automatic takes over again after 3 s)'],
     ['wheelie', 'Wheelie control'], ['assist', 'Countersteer assist'], ['name', 'Set your name'], ['record', 'Record a video (saved to Downloads)'], [['hud', 'help'], 'Hide HUD / this help']];
   function renderHelp() {
     const k = (id) => binds[id].keys.filter(Boolean).map(keyName).join(' or ') || '-';
@@ -917,7 +917,7 @@ async function main() {
     // HUD
     const mph = Math.abs(car.forwardSpeed) * 2.23694;
     $('speed').textContent = Math.round(mph);
-    $('gear').textContent = car.gear === -1 ? 'R' : car.gear === 0 ? 'N' : car.gear;
+    $('gear').textContent = (car.gear === -1 ? 'R' : car.gear === 0 ? 'N' : car.gear) + (car.autoTrans ? '' : 'M');
     $('rpmbar').style.width = Math.min(100, car.rpm / 7500 * 100) + '%';
     $('rpmbar').style.background = car.rpm > 7000 ? '#ff3b30' : '#ffb000';
     $('rpm').textContent = Math.round(car.rpm / 10) * 10;

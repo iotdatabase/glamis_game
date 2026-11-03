@@ -212,7 +212,16 @@ export class SandrailPhysics {
     const rpm = this.engW * 30 / Math.PI;
     this.rpm = rpm;
     if (this.autoTrans) {
-      if (this.gear >= 1 && this.shiftTimer <= 0) {
+      // Q / E in automatic: a paddle shift that holds the chosen gear for a few seconds, then the
+      // automatic takes over again (never neutral, and it still upshifts at the rev limiter)
+      if (this.holdT > 0) this.holdT -= dt;
+      if ((inp.shiftUp || inp.shiftDown) && this.gear >= 1) {
+        this.gear = Math.min(3, Math.max(1, this.gear + (inp.shiftUp ? 1 : -1)));
+        this.shiftTimer = s.shiftTime; this.holdT = 3;
+      }
+      inp.shiftUp = inp.shiftDown = false;
+      if (this.holdT > 0 && this.gear < 3 && rpm > s.revLimit - 100 && this.shiftTimer <= 0) { this.gear++; this.shiftTimer = s.shiftTime; this.holdT = 0; }
+      if (this.gear >= 1 && this.shiftTimer <= 0 && !(this.holdT > 0)) {
         // shift on (mostly) ground speed so a wheelspin launch up a dune stays in 1st
         const groundW = Math.abs(vFwd) / this.wheels[2].r * 1.6 + 5;
         const axleRpm = Math.min(this.axleOmega, groundW) * 30 / Math.PI * s.finalDrive;
@@ -228,7 +237,9 @@ export class SandrailPhysics {
       if (this.gear === -1 && inp.throttle > 0.1 && vFwd > -0.6) { this.gear = 1; this._revHold = undefined; }
     } else {
       if (inp.shiftUp) { if (this.gear === -1) this.gear = 0; else if (this.gear < 3) { this.gear++; this.shiftTimer = s.shiftTime; } inp.shiftUp = false; }
-      if (inp.shiftDown) { if (this.gear > 1) { this.gear--; this.shiftTimer = s.shiftTime; } else if (this.gear === 1) this.gear = 0; else if (this.gear === 0) this.gear = -1; inp.shiftDown = false; }
+      // below 1st: neutral, then reverse, only when (almost) stopped
+      const slow = Math.abs(vFwd) < 1.5;
+      if (inp.shiftDown) { if (this.gear > 1) { this.gear--; this.shiftTimer = s.shiftTime; } else if (slow && this.gear === 1) this.gear = 0; else if (slow && this.gear === 0) this.gear = -1; inp.shiftDown = false; }
     }
     // in reverse the brake pedal acts as throttle (arcade convenience)
     let throttle = inp.throttle, brake = inp.brake;
