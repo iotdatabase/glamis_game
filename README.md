@@ -14,6 +14,12 @@ Glamis game is a free, open source, multiplayer dune-driving game built with [th
 - **Multiplayer and computer riders:** play with friends on your network or over the internet, and add up to 12 computer-driven sandrails.
 - **Plays with keyboard, mouse or a game controller**, and every control can be rebound.
 
+## Play in your browser
+
+**[Play Glamis game now](https://iotdatabase.github.io/glamis_game/)**, with nothing to install. You need a desktop browser with WebGL2 (Chrome or Edge work best). The first load downloads about 150 MB of terrain and car files, and your browser keeps a copy after that.
+
+The browser version is single player: everything works except multiplayer and tire tracks that are saved for 48 hours, which need the game server. To play with friends, run the game yourself as shown below.
+
 ## Quick start
 
 You need [Node.js](https://nodejs.org) (the LTS version) and a desktop browser with WebGL2. Chrome or Edge give the best performance.

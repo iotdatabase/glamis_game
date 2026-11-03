@@ -15,8 +15,12 @@ export class NetClient {
     try { ws = new WebSocket(url); } catch { return; }
     this.ws = ws;
     ws.binaryType = 'arraybuffer';
-    ws.onopen = () => { this.connected = true; ws.send(JSON.stringify({ t: 'hello', name: this.name, car: this.car, world: this.world?.() })); };
-    ws.onclose = () => { this.connected = false; this.h.onStatus?.(false); setTimeout(() => this.connect(this.name, this.car), 3000); };
+    ws.onopen = () => { this.connected = this.everConnected = true; ws.send(JSON.stringify({ t: 'hello', name: this.name, car: this.car, world: this.world?.() })); };
+    // retry a server that dropped; a page with no game server behind it (GitHub Pages) stays single player
+    ws.onclose = () => {
+      const was = this.everConnected; this.connected = false; this.h.onStatus?.(false);
+      if (was) setTimeout(() => this.connect(this.name, this.car), 3000);
+    };
     ws.onerror = () => {};
     ws.onmessage = (e) => {
       if (e.data instanceof ArrayBuffer) { this.h.onBinary?.(new Float32Array(e.data)); return; }
