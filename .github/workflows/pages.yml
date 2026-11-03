@@ -1,0 +1,44 @@
+# Publishes the single-player game to GitHub Pages on every push to main.
+# One-time setup: repository Settings -> Pages -> Source: GitHub Actions.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # server.js serves public/ at the site root and assets/ under /assets; build the same layout
+      - name: Build site
+        run: |
+          mkdir _site
+          cp -r public/. _site/
+          cp -r assets _site/assets
+          # server.js answers /assets/audio/ with a JSON list of the sound files; Pages serves index.html
+          # for a folder, so write that list there and the game finds any optional sounds that exist
+          (cd assets/audio && ls -1 | jq -R . | jq -s -c .) > _site/assets/audio/index.html
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
