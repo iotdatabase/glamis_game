@@ -167,15 +167,15 @@ export class SandParticles {
     n = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
     const dir = Math.sign(surf) || 1;
     for (let i = 0; i < n; i++) {
-      const throwV = roost > 0 ? spin * (0.35 + Math.random() * 0.55) : 1.0 + Math.random() * 2;
-      const up = roost > 0 ? spin * (0.18 + Math.random() * 0.45) : 1 + Math.random() * 2.5;
+      const throwV = roost > 0 ? spin * (0.4 + Math.random() * 0.6) : 1.0 + Math.random() * 2;
+      const up = roost > 0 ? spin * (0.3 + Math.random() * 0.6) : 1 + Math.random() * 2.5;
       const lat = (Math.random() - 0.5) * (1.5 + spin * 0.12) + lateralSlide * 0.4;
       const ox = (Math.random() - 0.5) * 0.3, oz = (Math.random() - 0.5) * 0.3;
       const bx = -fwd.x * dir, bz = -fwd.z * dir;
       this.grains.spawn(
         contact.x + bx * 0.35 + side.x * ox + fwd.x * oz, contact.y + 0.05 + Math.random() * 0.12, contact.z + bz * 0.35 + side.z * ox + fwd.z * oz,
         carVel.x * 0.6 + bx * throwV + side.x * lat, up + Math.random() * 0.5, carVel.z * 0.6 + bz * throwV + side.z * lat,
-        0.5 + Math.random() * 1.0, 0.012 + Math.random() * Math.random() * 0.06, 0.0, 0.85 + Math.random() * 0.35, gy, 1.0,
+        0.7 + Math.random() * 1.4, 0.012 + Math.random() * Math.random() * 0.06, 0.0, 0.85 + Math.random() * 0.35, gy, 1.0,
       );
     }
     // dust clouds
@@ -188,14 +188,27 @@ export class SandParticles {
       this.dust.spawn(
         contact.x + bx * 0.6, contact.y + 0.3, contact.z + bz * 0.6,
         carVel.x * 0.35 + bx * tv + (Math.random() - 0.5) * 2, 0.6 + Math.random() * (1 + roost * 0.15), carVel.z * 0.35 + bz * tv + (Math.random() - 0.5) * 2,
-        2.5 + Math.random() * 3.5, 0.5 + Math.random() * 0.6, 0.9 + Math.random() * 0.9 + roost * 0.05, 0.85 + Math.random() * 0.25, gy, 0.13 + Math.min(roost * 0.012, 0.14),
+        4 + Math.random() * 6, 0.5 + Math.random() * 0.6, 0.7 + Math.random() * 0.8 + roost * 0.05, 0.85 + Math.random() * 0.25, gy, 0.13 + Math.min(roost * 0.012, 0.14),
       );
+    }
+    // the top of a rooster tail: big slow puffs 2-6 m up behind the car that drift and settle
+    if (roost > 4) {
+      let k = roost * 1.2 * this.emitScale * dt;
+      k = Math.floor(k) + (Math.random() < k % 1 ? 1 : 0);
+      for (let i = 0; i < k; i++) {
+        const bx = -fwd.x * dir, bz = -fwd.z * dir, back = 1.5 + Math.random() * 3.5;
+        this.dust.spawn(
+          contact.x + bx * back + (Math.random() - 0.5), contact.y + 1.5 + Math.random() * Math.min(5, roost * 0.25), contact.z + bz * back + (Math.random() - 0.5),
+          carVel.x * 0.2 + bx * 2 + (Math.random() - 0.5) * 1.5, 0.3 + Math.random() * 0.6, carVel.z * 0.2 + bz * 2 + (Math.random() - 0.5) * 1.5,
+          6 + Math.random() * 7, 1.2 + Math.random() * 1.2, 0.5 + Math.random() * 0.6, 0.9 + Math.random() * 0.2, gy, 0.10 + Math.min(roost * 0.006, 0.08),
+        );
+      }
     }
   }
 
   update(dt, camera) {
     this.uniforms.uCam.value.copy(camera.position);
     this.grains.update(dt, 0.25, this.gravity ?? 9.81, this.wind);
-    this.dust.update(dt, 1.4, -0.05, this.wind);
+    this.dust.update(dt, 1.1, 0.04, this.wind);
   }
 }

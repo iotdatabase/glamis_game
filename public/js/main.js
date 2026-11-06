@@ -10,6 +10,8 @@ import { SandrailPhysics, SANDRAIL_SPEC } from './vehicle-physics.js';
 import { SandrailModel } from './sandrail-model.js';
 import { SandParticles } from './particles.js';
 import { GameRecorder } from './recorder.js';
+import { PostFX } from './post.js';
+import { Scenery } from './scenery.js';
 import { EngineAudio, audioRecordStream } from './audio.js';
 import { NetClient } from './net.js';
 import { AIDriver, resolveCarContacts } from './ai-driver.js';
@@ -27,9 +29,9 @@ import { CARS, CAR_IDS, loadCar, GltfSandrail, setLookDaylight } from './gltf-sa
 const params = new URLSearchParams(location.search);
 const QUALITY = {
   // Tuned for an RTX 5090 class GPU
-  ultra: { pixelRatio: Math.min(window.devicePixelRatio || 1, 2), shadow: 8192, shadowBox: 90, patchRes: 128, leafSize: 16, lodRange0: 52, gradRes: 8192, sunShadowRes: 4096, deformRes: 4096, deformTexel: 0.035, farRes: 4096, farTexel: 0.13, grains: 60000, dust: 5000, msaa: true, aniso: 16 },
-  high: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), shadow: 4096, shadowBox: 80, patchRes: 64, leafSize: 16, lodRange0: 40, gradRes: 4096, sunShadowRes: 2048, deformRes: 2048, deformTexel: 0.06, farRes: 2048, farTexel: 0.2, grains: 30000, dust: 3000, msaa: true, aniso: 8 },
-  low: { pixelRatio: 1, shadow: 2048, shadowBox: 60, patchRes: 32, leafSize: 16, lodRange0: 32, gradRes: 2048, sunShadowRes: 1024, deformRes: 1024, deformTexel: 0.1, farRes: 2048, farTexel: 0.22, grains: 8000, dust: 800, msaa: false, aniso: 4 },
+  ultra: { pixelRatio: Math.min(window.devicePixelRatio || 1, 2), shadow: 8192, shadowBox: 90, patchRes: 128, leafSize: 16, lodRange0: 52, gradRes: 8192, sunShadowRes: 4096, deformRes: 4096, deformTexel: 0.035, farRes: 4096, farTexel: 0.13, grains: 60000, dust: 8000, msaa: true, aniso: 16 },
+  high: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), shadow: 4096, shadowBox: 80, patchRes: 64, leafSize: 16, lodRange0: 40, gradRes: 4096, sunShadowRes: 2048, deformRes: 2048, deformTexel: 0.06, farRes: 2048, farTexel: 0.2, grains: 30000, dust: 4500, msaa: true, aniso: 8 },
+  low: { pixelRatio: 1, shadow: 2048, shadowBox: 60, patchRes: 32, leafSize: 16, lodRange0: 32, gradRes: 2048, sunShadowRes: 1024, deformRes: 1024, deformTexel: 0.1, farRes: 2048, farTexel: 0.22, grains: 8000, dust: 1200, msaa: false, aniso: 4 },
 };
 const settings = loadSettings();
 const qName = QUALITY[params.get('q')] ? params.get('q') : (QUALITY[settings.quality] ? settings.quality : 'ultra');
@@ -58,6 +60,13 @@ async function main() {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.15, 150000);
+  // screen effects (M > Quality); 'auto' follows the preset: all on at Ultra / High, only the colour grade at Low
+  const post = new PostFX(renderer, scene, camera, Q.msaa);
+  const POST_KEYS = { bloom: 'bloom', heatHaze: 'shimmer', colorGrade: 'grade', motionBlur: 'blur' };
+  const postAuto = (k) => qName !== 'low' || k === 'colorGrade';
+  function applyPost() { const o = {}; for (const [k, n] of Object.entries(POST_KEYS)) o[n] = settings[k] === 'auto' || settings[k] === undefined ? postAuto(k) : !!settings[k]; post.set(o); }
+  applyPost();
+  const light = { el: 1, warm: 0, night: false };
   camera.layers.enable(LAYER_ARMS); camera.layers.enable(LAYER_MIRROR);   // the mirror cameras see neither
 
   status('Loading Glamis elevation data (USGS 3DEP)...');
@@ -116,6 +125,7 @@ async function main() {
       hemi.intensity = 0.42 * wx.env;
     }
     renderer.toneMappingExposure = EXPO * (night ? 0.95 / 0.53 : 1);
+    light.el = el; light.warm = warm; light.night = night;
     // the cars' orange lift / cabin fill follow the daylight
     setLookDaylight(night ? 0 : Math.min(1, Math.max(0, el * 180 / Math.PI / 8)) * wx.sun);
     // environment for reflections / sky light
@@ -374,7 +384,14 @@ async function main() {
   onCarLoaded.push((id) => {
     for (const r of remotes.values()) if (r.carId === id) { scene.remove(r.model.root); r.model = makeVisual(id, r.tint); scene.add(r.model.root); }
   });
+  // scenery: bushes on the flats, camps with RVs and parked rails at Glamis Flats and Osborne Overlook
+  const SCN = { ultra: { budget: 3500, radius: 550, shadows: true, parked: 3 }, high: { budget: 2500, radius: 420, shadows: true, parked: 2 }, low: { budget: 1000, radius: 260, shadows: false, parked: 0 } }[qName];
+  const scenery = new Scenery(scene, terrainData, SCN);
+  const parkedModel = (k) => { const ready = BOT_CARS.filter(id => templates[id]); return ready.length ? new GltfSandrail(templates[ready[(k + 3) % ready.length]]).root : null; };
+  scenery.buildCamps(terrainData.meta, parkedModel);
+  scenery.setEnabled(settings.scenery !== false);
   Promise.all(BOT_CARS.map(id => ensureCar(id))).then(() => {
+    scenery.addParked(parkedModel);
     if (!bots.length) return;
     const n = bots.length; setBotCount(0); setBotCount(n);
   });
@@ -759,7 +776,9 @@ async function main() {
       case 'quality': {
         const u = new URL(location.href); u.searchParams.delete('q'); location.href = u.toString(); break;
       }
-      case 'renderScale': renderer.setPixelRatio(Q.pixelRatio * v); renderer.setSize(innerWidth, innerHeight); break;
+      case 'renderScale': renderer.setPixelRatio(Q.pixelRatio * v); renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); break;
+      case 'bloom': case 'heatHaze': case 'colorGrade': case 'motionBlur': applyPost(); break;
+      case 'scenery': scenery.setEnabled(v !== false); break;
       case 'shadows': applyShadows(v); break;
       case 'particles': particles.emitScale = v; break;
       case 'weather': weather.set(v); setSun(timeOfDay); break;
@@ -965,7 +984,8 @@ async function main() {
       model.live.update({ dt, speed: car.forwardSpeed, gear: car.gear, rpm: car.rpm, throttle: car.throttleEff || 0, pos: car.pos, fwd: _f, tod: settings.night ? 22 : timeOfDay, day: dayLight(), cockpit: radarVis.cockpit });
       if (radarVis.cockpit) model.live.renderMirrors(renderer, scene, camera);
     }
-    renderer.render(scene, camera);
+    scenery.update(dt, camera.position, light.night);
+    post.render(dt, light, car.forwardSpeed, CAM_MODES[camMode] === 'cockpit');
     if (params.has('shot')) window.__frames = (window.__frames || 0) + 1;
     requestAnimationFrame(frame);
   }
@@ -1019,6 +1039,7 @@ async function main() {
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    post.setSize(innerWidth, innerHeight);
   });
   // test hooks
   window.__game = { teleport, get car() { return car; }, get model() { return model; }, tlog, ruts, templates, bots, menu, settings, setSetting, weather, radar, camera, renderer, scene, terrain, deform, particles, setSun, input, keys, sun, sky, hemi, sunDir, setCam: (m) => { camMode = m; }, setOrbit: (y, p, d) => { orbitYaw = y; orbitPitch = p; camDist = d; camInit = false; } };

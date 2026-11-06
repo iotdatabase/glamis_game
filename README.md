@@ -10,6 +10,8 @@ Glamis game is a free, open source, multiplayer dune-driving game built with [th
 - **Sandrail physics at 1000 Hz:** 1200 hp V8, torque converter and 3-speed gearbox (auto or manual), spool rear end, long-travel suspension with bump stops, paddle tires that dig in, wheelies, roll-overs and loops with wheelie control off.
 - **Living sand:** every tire leaves ruts, paddle prints and berms that every car feels. Tracks are saved by the server and last 48 hours, so friends drive over your old lines.
 - **Ten sandrails** with suspension, steering and drivetrain that move with the physics, and a full cockpit view with live dash, GPS map and mirrors in the GLX pro.
+- **A living desert:** creosote and dry scrub on the flats between the dunes, camps with RVs, shade canopies, whip flags, porch lights and parked sandrails at Glamis Flats and Osborne Overlook, tall rooster tails from the paddle tires and dust that hangs in the air.
+- **Screen effects:** glow on the sun, light bars and whips, heat shimmer over the far sand, a warm golden-hour colour grade and speed blur, each switchable in the menu.
 - **Weather and time:** clear to sandstorm, wind that drifts sand and dust, time of day, and night mode with a moonlit, starry sky, LED light bars and whip lights.
 - **Multiplayer and computer riders:** play with friends on your network or over the internet, and add up to 12 computer-driven sandrails.
 - **Plays with keyboard, mouse or a game controller**, and every control can be rebound.
@@ -142,6 +144,11 @@ Two keyboard keys and two controller inputs for each of the 18 actions in the ta
 | Photo sand textures | Off, Test patch at start, Everywhere |
 | Live mirrors (cockpit) | On, Off (off gives more fps in the cockpit) |
 | Driver arms (cockpit) | Show, Hide |
+| Desert life | On, Off (bushes on the flats, camps with RVs and parked rails at Glamis Flats and Osborne Overlook) |
+| Bloom (glow) | Auto, On, Off (Auto: on at Ultra and High) |
+| Heat shimmer | Auto, On, Off |
+| Colour grading | Auto, On, Off (Auto: on at every preset) |
+| Speed blur | Auto, On, Off (the screen edges streak above about 50 mph) |
 | Sand and dust amount | 25 to 200 % |
 
 ### Weather (all shared)

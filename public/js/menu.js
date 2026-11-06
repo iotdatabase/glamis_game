@@ -12,6 +12,7 @@ export const DEFAULTS = {
   autoTrans: true, wheelieControl: true, steerAssist: true, steerSens: 1, volume: 0.8, camMode: 0, cockpitFov: 78, radarCockpit: 'hud', liveMirrors: true, driverArms: false, invertLook: false,
   car: 'pro',
   gravity: 9.81, grip: 1, softness: 1, sandTex: 'all',
+  bloom: 'auto', heatHaze: 'auto', colorGrade: 'auto', motionBlur: 'auto', scenery: 'auto',
   aiCount: 6, aiSkill: 1, radar: true, radarRange: 600, labels: true, showHelp: true,
 };
 
@@ -60,6 +61,11 @@ export const SCHEMA = [
     { key: 'sandTex', label: 'Photo sand textures', type: 'choice', options: [['off', 'Off'], ['patch', 'Test patch at start'], ['all', 'Everywhere']], hint: 'Poly Haven scanned sand. Turn off for slower PCs.' },
     { key: 'liveMirrors', label: 'Live mirrors (cockpit)', type: 'choice', options: [[true, 'On'], [false, 'Off']], hint: 'Real reflections in the rear-view mirrors. Turn off for more fps in the cockpit view.' },
     { key: 'driverArms', label: 'Driver arms (cockpit)', type: 'choice', options: [[true, 'Show'], [false, 'Hide']], hint: 'The driver\'s arms and gloves on the steering wheel in the driver\'s seat view.' },
+    { key: 'scenery', label: 'Desert life', type: 'choice', options: [['auto', 'On'], [false, 'Off']], hint: 'Bushes on the flats, camps with RVs, flags and parked rails at Glamis Flats and Osborne Overlook' },
+    { key: 'bloom', label: 'Bloom (glow)', type: 'choice', options: [['auto', 'Auto'], [true, 'On'], [false, 'Off']], hint: 'The sun, light bars and whips glow. Auto: on at Ultra and High' },
+    { key: 'heatHaze', label: 'Heat shimmer', type: 'choice', options: [['auto', 'Auto'], [true, 'On'], [false, 'Off']], hint: 'The far sand wavers in the midday heat' },
+    { key: 'colorGrade', label: 'Colour grading', type: 'choice', options: [['auto', 'Auto'], [true, 'On'], [false, 'Off']], hint: 'Warmer light, golden hour glow and a soft vignette' },
+    { key: 'motionBlur', label: 'Speed blur', type: 'choice', options: [['auto', 'Auto'], [true, 'On'], [false, 'Off']], hint: 'The screen edges streak above ~50 mph' },
     { key: 'particles', label: 'Sand and dust amount', type: 'range', min: 0.25, max: 2, step: 0.25, fmt: v => Math.round(v * 100) + '%' },
   ] },
   { tab: 'Weather', items: [
