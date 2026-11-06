@@ -143,7 +143,8 @@ export class SandParticles {
       uLC: { value: Array.from({ length: 16 }, () => new THREE.Vector3()) }, uLN: { value: 0 }, uSand: { value: new THREE.Color(0.80, 0.56, 0.36) }, // Glamis sand (matches the terrain albedo)
       uFogColor: { value: new THREE.Color() }, uFogDensity: { value: 0 }, uCam: { value: new THREE.Vector3() },
     };
-    const mk = () => new THREE.ShaderMaterial({
+    // (opts.makeMaterial: the WebGPU renderer brings its own node material, gpu/effects-gpu.js)
+    const mk = opts.makeMaterial ? () => opts.makeMaterial(this) : () => new THREE.ShaderMaterial({
       uniforms: this.uniforms, vertexShader: VS, fragmentShader: FS,
       transparent: true, depthWrite: false, blending: THREE.NormalBlending,
     });

@@ -52,7 +52,7 @@ async function main() {
       renderer = new W.WebGPURenderer({ antialias: Q.msaa, powerPreference: 'high-performance' });
       await renderer.init();
       if (!renderer.backend.isWebGPUBackend) throw new Error('no WebGPU backend');
-      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
+      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), fx: await import('./gpu/effects-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
       const info = renderer.backend.adapter?.info || {};
       gpuName = 'WebGPU · ' + (info.description || `${info.vendor || ''} ${info.architecture || ''}`.trim() || 'GPU');
     } catch (e) {
@@ -108,8 +108,8 @@ async function main() {
   su.turbidity.value = 2.2; su.rayleigh.value = 1.1; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.86;
   su.cloudCoverage.value = 0.12; su.cloudDensity.value = 0.35; su.cloudScale.value = 0.00012;
   scene.add(sky);
-  // (WebGPU port, stage 1: the night sky, ruts, sand particles, screen effects and live mirrors are not ported yet)
-  const nightSky = gpu ? Object.assign(new THREE.Object3D(), { material: { uniforms: { uTime: { value: 0 } } } }) : makeNightSky();
+  // (WebGPU port: screen effects and live mirrors are not ported yet)
+  const nightSky = gpu ? gpu.fx.makeNightSkyGPU(MOON_DIR) : makeNightSky();
   scene.add(nightSky);
   const SUN_I = 7.5;
   const sun = new THREE.DirectionalLight(0xfff1dd, SUN_I);
@@ -221,11 +221,11 @@ async function main() {
   terrain = new TerrainRenderer(renderer, terrainData, { patchRes: Q.patchRes, leafSize: Q.leafSize, lodRange0: Q.lodRange0, gradRes: Q.gradRes, sunShadowRes: Q.sunShadowRes, gpu: gpu?.terrain });
   terrain.sunLight = sun;
   scene.add(terrain.mesh);
-  const deformStub = () => ({ texture: null, center: null, follow() {}, inWindow: () => false, overlaps: () => false, stamp() {}, replay() {}, flush() {} });
-  const deform = gpu ? deformStub() : new SandDeformer(renderer, { res: Q.deformRes, texel: Q.deformTexel });
+  const Deformer = gpu ? gpu.fx.SandDeformerGPU : SandDeformer;
+  const deform = new Deformer(renderer, { res: Q.deformRes, texel: Q.deformTexel });
   terrain.uniforms.uDeform.value = deform.texture;
   // a coarser rut map reaching 200+ m out, so tracks are already there before you get close
-  const deformFar = gpu ? deformStub() : new SandDeformer(renderer, { res: Q.farRes, texel: Q.farTexel, coarse: true });
+  const deformFar = new Deformer(renderer, { res: Q.farRes, texel: Q.farTexel, coarse: true });
   terrain.uniforms.uDeform2.value = deformFar.texture;
   const deforms = [deform, deformFar];
   // every rut is kept for 48 hours (stored by the server, shared with all players)
@@ -240,9 +240,7 @@ async function main() {
       ruts.stampSeg(buf, p);
     }
   };
-  particles = gpu
-    ? { uniforms: new Proxy({}, { get: (t, k) => (t[k] ??= { value: new THREE.Color() }) }), emitScale: 1, wind: [0, 0], emitWheel() {}, update() {} }
-    : new SandParticles(scene, { grains: Q.grains, dust: Q.dust });
+  particles = new SandParticles(scene, { grains: Q.grains, dust: Q.dust, makeMaterial: gpu ? gpu.fx.makeParticleMaterialFactory(terrain) : undefined });
   for (const k of ['uLP', 'uLD', 'uLC']) particles.uniforms[k] = terrain.uniforms[k]; // same car lights light the dust
   particles.uniforms.uFogDensity.value = scene.fog.density;
   particles.emitScale = settings.particles;
