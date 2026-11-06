@@ -43,7 +43,25 @@ const status = (t) => { const el = $('loading-status'); if (el) el.textContent =
 
 async function main() {
   // ---------- renderer ----------
-  const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa, powerPreference: 'high-performance', reversedDepthBuffer: params.get('rd') !== '0', preserveDrawingBuffer: params.has('shot') });
+  // ?renderer=webgpu tries three.js's WebGPU renderer (experimental, still being ported); WebGL2 is the
+  // default and the automatic fallback when WebGPU is missing or fails to start
+  let renderer = null, gpu = null, gpuName = 'GPU';
+  if (params.get('renderer') === 'webgpu' && navigator.gpu) {
+    try {
+      const W = await import('three/webgpu');
+      renderer = new W.WebGPURenderer({ antialias: Q.msaa, powerPreference: 'high-performance' });
+      await renderer.init();
+      if (!renderer.backend.isWebGPUBackend) throw new Error('no WebGPU backend');
+      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
+      const info = renderer.backend.adapter?.info || {};
+      gpuName = 'WebGPU · ' + (info.description || `${info.vendor || ''} ${info.architecture || ''}`.trim() || 'GPU');
+    } catch (e) {
+      console.warn('WebGPU unavailable, using WebGL2:', e);
+      try { renderer?.dispose(); } catch { /* ignore */ }
+      renderer = null; gpu = null;
+    }
+  }
+  if (!renderer) renderer = new THREE.WebGLRenderer({ antialias: Q.msaa, powerPreference: 'high-performance', reversedDepthBuffer: params.get('rd') !== '0', preserveDrawingBuffer: params.has('shot') });
   renderer.setPixelRatio(Q.pixelRatio * (Number(params.get('ss')) || settings.renderScale));
   renderer.setSize(window.innerWidth, window.innerHeight);
   // ACES at 0.53 (the look the sand and sky are tuned for); ?tm=neutral|agx&exp=x tries the others
@@ -54,14 +72,25 @@ async function main() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.appendChild(renderer.domElement);
-  const gl = renderer.getContext();
-  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-  const gpuName = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'GPU';
+  if (!gpu) {
+    const gl = renderer.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    gpuName = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'GPU';
+  }
+  // WebGPU: the sky is three.js's node version (same settings, exposed under the old uniform names)
+  const makeSky = () => {
+    if (!gpu) return new Sky();
+    const s = new gpu.SkyMesh();
+    s.material.uniforms = { turbidity: s.turbidity, rayleigh: s.rayleigh, mieCoefficient: s.mieCoefficient, mieDirectionalG: s.mieDirectionalG,
+      sunPosition: s.sunPosition, cloudScale: s.cloudScale, cloudSpeed: s.cloudSpeed, cloudCoverage: s.cloudCoverage, cloudDensity: s.cloudDensity,
+      cloudElevation: s.cloudElevation, showSunDisc: s.showSunDisc, time: { value: 0 } };
+    return s;
+  };
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.15, 150000);
   // screen effects (M > Quality); 'auto' follows the preset: all on at Ultra / High, only the colour grade at Low
-  const post = new PostFX(renderer, scene, camera, Q.msaa);
+  const post = gpu ? { set() {}, setSize() {}, render() { renderer.render(scene, camera); } } : new PostFX(renderer, scene, camera, Q.msaa);
   const POST_KEYS = { bloom: 'bloom', heatHaze: 'shimmer', colorGrade: 'grade', motionBlur: 'blur' };
   const postAuto = (k) => qName !== 'low' || k === 'colorGrade';
   function applyPost() { const o = {}; for (const [k, n] of Object.entries(POST_KEYS)) o[n] = settings[k] === 'auto' || settings[k] === undefined ? postAuto(k) : !!settings[k]; post.set(o); }
@@ -73,13 +102,14 @@ async function main() {
   const terrainData = await TerrainData.load('data/');
 
   // ---------- sky + sun ----------
-  const sky = new Sky();
+  const sky = makeSky();
   sky.scale.setScalar(140000);
   const su = sky.material.uniforms;
   su.turbidity.value = 2.2; su.rayleigh.value = 1.1; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.86;
   su.cloudCoverage.value = 0.12; su.cloudDensity.value = 0.35; su.cloudScale.value = 0.00012;
   scene.add(sky);
-  const nightSky = makeNightSky();
+  // (WebGPU port, stage 1: the night sky, ruts, sand particles, screen effects and live mirrors are not ported yet)
+  const nightSky = gpu ? Object.assign(new THREE.Object3D(), { material: { uniforms: { uTime: { value: 0 } } } }) : makeNightSky();
   scene.add(nightSky);
   const SUN_I = 7.5;
   const sun = new THREE.DirectionalLight(0xfff1dd, SUN_I);
@@ -96,7 +126,7 @@ async function main() {
   scene.fog = new THREE.FogExp2(0xc8d4e2, 0.000032);
 
   const sunDir = new THREE.Vector3();
-  const pmrem = new THREE.PMREMGenerator(renderer);
+  const pmrem = gpu ? new gpu.W.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer);
   let envRT = null;
   let timeOfDay = Number(params.get('tod') ?? settings.tod); // hours
   let weather = null;
@@ -130,7 +160,7 @@ async function main() {
     setLookDaylight(night ? 0 : Math.min(1, Math.max(0, el * 180 / Math.PI / 8)) * wx.sun);
     // environment for reflections / sky light
     const envScene = new THREE.Scene();
-    const sky2 = new Sky(); sky2.scale.setScalar(1000);
+    const sky2 = makeSky(); sky2.scale.setScalar(1000);
     // (very turbid skies render far too bright as a light source; haze is added below as a dust dome)
     sky2.material.uniforms.turbidity.value = Math.min(su.turbidity.value, 3.5);
     sky2.material.uniforms.rayleigh.value = Math.min(su.rayleigh.value, 1.3);
@@ -188,12 +218,14 @@ async function main() {
   // ---------- terrain ----------
   status('Building terrain (CDLOD, gradient + shadow bakes on GPU)...');
   let terrain = null, particles = null;
-  terrain = new TerrainRenderer(renderer, terrainData, { patchRes: Q.patchRes, leafSize: Q.leafSize, lodRange0: Q.lodRange0, gradRes: Q.gradRes, sunShadowRes: Q.sunShadowRes });
+  terrain = new TerrainRenderer(renderer, terrainData, { patchRes: Q.patchRes, leafSize: Q.leafSize, lodRange0: Q.lodRange0, gradRes: Q.gradRes, sunShadowRes: Q.sunShadowRes, gpu: gpu?.terrain });
+  terrain.sunLight = sun;
   scene.add(terrain.mesh);
-  const deform = new SandDeformer(renderer, { res: Q.deformRes, texel: Q.deformTexel });
+  const deformStub = () => ({ texture: null, center: null, follow() {}, inWindow: () => false, overlaps: () => false, stamp() {}, replay() {}, flush() {} });
+  const deform = gpu ? deformStub() : new SandDeformer(renderer, { res: Q.deformRes, texel: Q.deformTexel });
   terrain.uniforms.uDeform.value = deform.texture;
   // a coarser rut map reaching 200+ m out, so tracks are already there before you get close
-  const deformFar = new SandDeformer(renderer, { res: Q.farRes, texel: Q.farTexel, coarse: true });
+  const deformFar = gpu ? deformStub() : new SandDeformer(renderer, { res: Q.farRes, texel: Q.farTexel, coarse: true });
   terrain.uniforms.uDeform2.value = deformFar.texture;
   const deforms = [deform, deformFar];
   // every rut is kept for 48 hours (stored by the server, shared with all players)
@@ -208,7 +240,9 @@ async function main() {
       ruts.stampSeg(buf, p);
     }
   };
-  particles = new SandParticles(scene, { grains: Q.grains, dust: Q.dust });
+  particles = gpu
+    ? { uniforms: new Proxy({}, { get: (t, k) => (t[k] ??= { value: new THREE.Color() }) }), emitScale: 1, wind: [0, 0], emitWheel() {}, update() {} }
+    : new SandParticles(scene, { grains: Q.grains, dust: Q.dust });
   for (const k of ['uLP', 'uLD', 'uLC']) particles.uniforms[k] = terrain.uniforms[k]; // same car lights light the dust
   particles.uniforms.uFogDensity.value = scene.fog.density;
   particles.emitScale = settings.particles;
@@ -290,7 +324,7 @@ async function main() {
   let model = makeVisual(settings.car);
   model.arms = DriverArms.for(model);
   // live mirrors, dash and chart plotter, cabin fill (the radar is made further down)
-  const makeLive = (m) => (m instanceof GltfSandrail ? new CockpitLive(m, { getRadar: () => radar, getTerrain: () => terrain, mirrorsLive: settings.liveMirrors !== false }) : null);
+  const makeLive = (m) => (m instanceof GltfSandrail ? new CockpitLive(m, { getRadar: () => radar, getTerrain: () => terrain, mirrorsLive: settings.liveMirrors !== false && !gpu }) : null);
   model.live = makeLive(model);
   scene.add(model.root);
   function switchCar(id) {

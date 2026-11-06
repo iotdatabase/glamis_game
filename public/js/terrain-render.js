@@ -206,15 +206,20 @@ export class TerrainRenderer {
       uTexAvg: { value: new THREE.Vector2(0.4, 0.5) },       // mean luminance of the two diffuse maps
     };
     for (let i = 0; i < this.levels; i++) this.uniforms.uRanges.value[i] = this.ranges[i];
-    this._bakeGradients();
-
-    this.material = this._makeMaterial(false);
-    this.depthMaterial = this._makeMaterial(true);
-    this.mesh = new THREE.Mesh(geo, this.material);
+    if (opts.gpu) {
+      // WebGPU renderer: node material + bakes from gpu/terrain-gpu.js (same shapes, in WGSL)
+      opts.gpu.setupTerrainGPU(this, ROOT_HALF);
+      this.mesh = new THREE.Mesh(geo, this.material);
+    } else {
+      this._bakeGradients();
+      this.material = this._makeMaterial(false);
+      this.depthMaterial = this._makeMaterial(true);
+      this.mesh = new THREE.Mesh(geo, this.material);
+      this.mesh.customDepthMaterial = this.depthMaterial;
+    }
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
-    this.mesh.customDepthMaterial = this.depthMaterial;
     this.frustum = new THREE.Frustum();
     this._m = new THREE.Matrix4();
     this._box = new THREE.Box3();
@@ -304,6 +309,7 @@ export class TerrainRenderer {
 
   // Soft terrain self-shadowing for dunes beyond the real-time shadow map.
   bakeSunShadow(sunDir) {
+    if (this.bakeSunShadowGPU) { this.bakeSunShadowGPU(sunDir); return; }
     const n = this.opts.sunShadowRes;
     if (!this.sunRT) {
       this.sunRT = new THREE.WebGLRenderTarget(n, n, {
@@ -484,6 +490,7 @@ export class TerrainRenderer {
     this.count = 0;
     this._select(this.levels - 1, 0, 0, -ROOT_HALF, -ROOT_HALF, ROOT_SIZE, cp, true);
     this.geometry.instanceCount = this.count;
+    this.updateGPU?.();
     this.instData.needsUpdate = true;
     this.instData.clearUpdateRanges();
     this.instData.addUpdateRange(0, this.count * 4);
