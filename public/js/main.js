@@ -24,7 +24,7 @@ import { makeNightSky, MOON_DIR } from './night-sky.js';
 import { PLACES, placeXZ } from './places.js';
 import { Radar } from './radar.js';
 import { Menu, loadSettings, saveSettings, GLOBAL_KEYS, SCHEMA } from './menu.js';
-import { CARS, CAR_IDS, loadCar, GltfSandrail, setLookDaylight } from './gltf-sandrail.js';
+import { CARS, CAR_IDS, loadCar, GltfSandrail, setLookDaylight, setLookBackend } from './gltf-sandrail.js';
 
 const params = new URLSearchParams(location.search);
 const QUALITY = {
@@ -52,7 +52,8 @@ async function main() {
       renderer = new W.WebGPURenderer({ antialias: Q.msaa, powerPreference: 'high-performance' });
       await renderer.init();
       if (!renderer.backend.isWebGPUBackend) throw new Error('no WebGPU backend');
-      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), fx: await import('./gpu/effects-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
+      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), fx: await import('./gpu/effects-gpu.js'), car: await import('./gpu/car-gpu.js'), merge: await import('./gpu/merge-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
+      setLookBackend(gpu.car.convertCarLooks);
       const info = renderer.backend.adapter?.info || {};
       gpuName = 'WebGPU · ' + (info.description || `${info.vendor || ''} ${info.architecture || ''}`.trim() || 'GPU');
     } catch (e) {
@@ -108,7 +109,7 @@ async function main() {
   su.turbidity.value = 2.2; su.rayleigh.value = 1.1; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.86;
   su.cloudCoverage.value = 0.12; su.cloudDensity.value = 0.35; su.cloudScale.value = 0.00012;
   scene.add(sky);
-  // (WebGPU port: screen effects and live mirrors are not ported yet)
+  // (WebGPU port: the screen effects are not ported yet)
   const nightSky = gpu ? gpu.fx.makeNightSkyGPU(MOON_DIR) : makeNightSky();
   scene.add(nightSky);
   const SUN_I = 7.5;
@@ -220,6 +221,7 @@ async function main() {
   let terrain = null, particles = null;
   terrain = new TerrainRenderer(renderer, terrainData, { patchRes: Q.patchRes, leafSize: Q.leafSize, lodRange0: Q.lodRange0, gradRes: Q.gradRes, sunShadowRes: Q.sunShadowRes, gpu: gpu?.terrain });
   terrain.sunLight = sun;
+  if (gpu) sun.shadow.camera.layers.enable(gpu.merge.SHADOW_LAYER);   // the cars' merged shadow casters
   scene.add(terrain.mesh);
   const Deformer = gpu ? gpu.fx.SandDeformerGPU : SandDeformer;
   const deform = new Deformer(renderer, { res: Q.deformRes, texel: Q.deformTexel });
@@ -296,7 +298,16 @@ async function main() {
   const availableCars = Object.keys(templates);
   if (!availableCars.length) console.warn('No .glb sandrails found in assets/, using the built-in model');
   // a visual + physics spec for a car id ('classic' or a missing model = the built-in procedural rail)
-  function makeVisual(id, tint) {
+  // WebGPU: merge the parts that never move into one mesh per material (fewer draw calls); the player's car
+  // waits until its live mirrors and dash screens are set up (those stay separate)
+  function mergeParts(m) {
+    if (!gpu || !(m instanceof GltfSandrail)) return;
+    const ex = new Set();
+    for (const mi of m.live?.mirrors || []) ex.add(mi.mesh);
+    for (const s of Object.values(m.live?.screens || {})) for (const mesh of s.meshes) ex.add(mesh);
+    gpu.merge.mergeStaticParts(m, ex);
+  }
+  function makeVisual(id, tint, player = false) {
     const tpl = templates[id];
     let m;
     if (tpl) m = new GltfSandrail(tpl);
@@ -304,6 +315,7 @@ async function main() {
     m.lights = new CarLights(m, CARS[id] && tpl ? parseInt(CARS[id].color.slice(1), 16) : (tint ?? 0xb00d12)); // LED light bar + whips (top light in the car's color)
     m.lights.setOn(lightsOn);
     m.setLamps?.(lightsOn);
+    if (!player) mergeParts(m);
     return m;
   }
   const specFor = (id) => templates[id]?.spec || SANDRAIL_SPEC;
@@ -319,11 +331,12 @@ async function main() {
   }
   const spawnOffset = (Math.random() - 0.5) * 30;
   car.reset(SPAWN.x + Math.cos(bestYaw) * spawnOffset, SPAWN.z - Math.sin(bestYaw) * spawnOffset, bestYaw);
-  let model = makeVisual(settings.car);
+  let model = makeVisual(settings.car, undefined, true);
   model.arms = DriverArms.for(model);
   // live mirrors, dash and chart plotter, cabin fill (the radar is made further down)
-  const makeLive = (m) => (m instanceof GltfSandrail ? new CockpitLive(m, { getRadar: () => radar, getTerrain: () => terrain, mirrorsLive: settings.liveMirrors !== false && !gpu }) : null);
+  const makeLive = (m) => (m instanceof GltfSandrail ? new CockpitLive(m, { getRadar: () => radar, getTerrain: () => terrain, mirrorsLive: settings.liveMirrors !== false }) : null);
   model.live = makeLive(model);
+  mergeParts(model);
   scene.add(model.root);
   function switchCar(id) {
     const old = car;
@@ -336,9 +349,10 @@ async function main() {
     car = nc;
     scene.remove(model.root);
     model.live?.dispose();
-    model = makeVisual(id);
+    model = makeVisual(id, undefined, true);
     model.arms = DriverArms.for(model);
     model.live = makeLive(model);
+    mergeParts(model);
     radarVis();
     scene.add(model.root);
     for (let i = 0; i < 4; i++) prevContact[i] = null;

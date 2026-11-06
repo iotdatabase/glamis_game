@@ -215,6 +215,8 @@ export class CockpitLive {
         const m = o.material.clone();
         m.userData = { ...o.material.userData };
         if (o.material.onBeforeCompile) { m.onBeforeCompile = o.material.onBeforeCompile; m.customProgramCacheKey = o.material.customProgramCacheKey; }
+        // (WebGPU: the node version of the car look keeps its lighting model, gpu/car-gpu.js)
+        if (Object.prototype.hasOwnProperty.call(o.material, 'setupLightingModel')) m.setupLightingModel = o.material.setupLightingModel;
         m.emissiveMap = tex;
         if (m.map === t0) m.map = null;
         made.set(o.material, m);

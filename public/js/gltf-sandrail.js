@@ -241,6 +241,9 @@ export const CABIN = {
 };
 const DAY = { uLookDay: { value: 1 } };
 export function setLookDaylight(k) { DAY.uLookDay.value = THREE.MathUtils.clamp(k, 0, 1); }
+// the WebGPU renderer swaps the patched materials for node versions (gpu/car-gpu.js)
+let lookBackend = null;
+export function setLookBackend(fn) { lookBackend = fn; }
 
 export function patchMaterial(m, look, t = {}) {
   if (m.userData.lookPatched) return;
@@ -538,6 +541,7 @@ function prepare(id, scene, phys) {
     }
   });
   const bakedAO = applyLook(def, scene);
+  if (lookBackend) lookBackend(scene, CABIN, DAY);
   return { id, def, scene, phys, spec, eye, flip, bakedAO };
 }
 
