@@ -15,7 +15,7 @@ export const CARS = {
   green: { label: 'Green', file: 'assets/green__sandrail/sandcar.glb', family: 'sandcar', color: '#39b54a' },
   silver: { label: 'Silver', file: 'assets/silver_sandrail/sandcar.glb', family: 'sandcar', color: '#c8ccd2' },
   yellow: { label: 'Yellow', file: 'assets/yellow_sandrail/sandcar.glb', family: 'sandcar', color: '#e8c060' },
-  trax: { label: 'Trax (green)', file: 'assets/trax_sandrail/sandrail.glb', family: 'trax', color: '#5fe04a' },
+  trax: { label: 'Trax (green)', file: 'assets/trax_sandrail/sandrail.glb', family: 'trax', color: '#5fe04a', heavy: true },
   // keepRoll: anti-roll bars retuned so the narrower real track (1.84 / 1.93 m) keeps the roll stiffness
   // the physics was tuned with (base track 2.04 / 2.00 m), and the CG lowered in proportion to the narrower
   // track / shorter wheelbase so the car is no easier to tip or wheelie than the tuned one.
@@ -24,9 +24,9 @@ export const CARS = {
   // maxSteerVis: visual cap (rad) of a front wheel's
   // steer when its suspension is compressed: at full lock (inner wheel 0.62 rad) and full bump the tyre would
   // touch the nose by ~9 mm; at ride height it clears by 36 mm, so the cap fades in from 5 to 20 cm of bump
-  pro: { label: 'GLX pro (orange)', file: 'assets/pro_sandrail/sandcar.glb', family: 'sandcar', color: '#ff5a0d', look: 'trx', keepRoll: true, maxSteerVis: 0.52, sightNotch: true, stretchFront: 0.25 },
+  pro: { label: 'GLX pro (orange)', file: 'assets/pro_sandrail/sandcar.glb', family: 'sandcar', color: '#ff5a0d', look: 'trx', heavy: true, keepRoll: true, maxSteerVis: 0.52, sightNotch: true, stretchFront: 0.25 },
   // an earlier GLX pro build (assets/pro_sandrail2), same sandcar contract, added for side-by-side testing
-  pro2: { label: 'GLX pro 2 (orange)', file: 'assets/pro_sandrail2/sandcar.glb', family: 'sandcar', color: '#ff7a2d', keepRoll: true, sightNotch: true },
+  pro2: { label: 'GLX pro 2 (orange)', file: 'assets/pro_sandrail2/sandcar.glb', family: 'sandcar', color: '#ff7a2d', heavy: true, keepRoll: true, sightNotch: true },
 };
 
 // ---------- look: baked ambient occlusion + per-car material tuning ----------
@@ -431,12 +431,13 @@ export const CAR_IDS = Object.keys(CARS);
 const loader = new GLTFLoader();
 const cache = new Map();
 
-export function loadCar(id) {
+// onProgress(fraction 0..1) while the model downloads (first request only)
+export function loadCar(id, onProgress) {
   if (!CARS[id]) return Promise.reject(new Error('unknown car ' + id));
   if (!cache.has(id)) {
     const def = CARS[id];
     const p = Promise.all([
-      loader.loadAsync(def.file),
+      loader.loadAsync(def.file, onProgress && ((e) => { if (e.total) onProgress(e.loaded / e.total); })),
       def.family === 'sandcar' ? fetch(def.file.replace(/\.glb$/, '.physics.json')).then(r => r.ok ? r.json() : null).catch(() => null) : null,
     ]).then(([gltf, phys]) => { uniqueNodeNames(gltf); return prepare(id, gltf.scene, phys); });
     p.catch(() => cache.delete(id));

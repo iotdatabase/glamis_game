@@ -1,5 +1,5 @@
 Sand textures from Poly Haven (polyhaven.com), CC0:
-- Sand 03 (fine grain)
+- Sand 03 (fine grain), re-encoded as WebP
 - Aerial Beach 01 by Rob Tuytel (wind-worked sand)
 
 Everything else in assets/ (the sandrail models, the driver's arms and the engine

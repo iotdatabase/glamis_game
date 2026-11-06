@@ -16,7 +16,7 @@ Glamis game is a free, open source, multiplayer dune-driving game built with [th
 
 ## Play in your browser
 
-**[Play Glamis game now](https://iotdatabase.github.io/glamis_game/)**, with nothing to install. You need a desktop browser with WebGL2 (Chrome or Edge work best). The first load downloads about 150 MB of terrain and car files, and your browser keeps a copy after that.
+**[Play Glamis game now](https://iotdatabase.github.io/glamis_game/)**, with nothing to install. You need a desktop browser with WebGL2 (Chrome or Edge work best). The first load downloads about 40 MB (the terrain and your car); the detailed GLX pro 2 and Trax models download only when you pick them. Your browser keeps a copy after that.
 
 The browser version is single player: everything works except multiplayer and tire tracks that are saved for 48 hours, which need the game server. To play with friends, run the game yourself as shown below.
 
@@ -201,7 +201,7 @@ Pick your car in **M menu > Game > Your sandrail**. Each model gets physics buil
 - **Trax** (green): a race rail with a green livery.
 - **Classic**: built in code (`public/js/sandrail-model.js`), no model file needed.
 
-All the car models were made by the author of the game. To add your own car, put its `.glb` (and a `sandcar.physics.json` for the `sandcar` rig) in a new folder under `assets/`, add one line to the `CARS` list at the top of `public/js/gltf-sandrail.js` and add it to the `car` choices in `public/js/menu.js`.
+Only your own car loads before you can drive. The computer riders use the lighter models, which load in the background, and the detailed GLX pro, GLX pro 2 and Trax download the first time someone drives one. All the car models were made by the author of the game. To add your own car, put its `.glb` (and a `sandcar.physics.json` for the `sandcar` rig) in a new folder under `assets/`, add one line to the `CARS` list at the top of `public/js/gltf-sandrail.js` and add it to the `car` choices in `public/js/menu.js`.
 
 ## How it is built
 

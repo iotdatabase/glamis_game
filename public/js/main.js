@@ -209,7 +209,7 @@ async function main() {
     return t;
   });
   let sandTexReady = false;
-  Promise.all([loadTex('sand_03_diff_2k.jpg', true), loadTex('sand_03_nor_gl_2k.jpg'), loadTex('aerial_beach_01_diff_2k.jpg', true), loadTex('aerial_beach_01_nor_gl_2k.jpg')])
+  Promise.all([loadTex('sand_03_diff_2k.webp', true), loadTex('sand_03_nor_gl_2k.webp'), loadTex('aerial_beach_01_diff_2k.webp', true), loadTex('aerial_beach_01_nor_gl_2k.jpg')])
     .then(([a, b, c, d]) => {
       const u = terrain.uniforms;
       u.uSandTex.value = a; u.uSandNor.value = b; u.uRipTex.value = c; u.uRipNor.value = d;
@@ -235,11 +235,22 @@ async function main() {
 
   // ---------- local car ----------
   let lightsOn = !!settings.night; // N toggles the light bars and whips (they come on at night)
-  status('Loading sandrail models...');
-  // load every model in the assets folder (player, computer cars, other players)
-  const loaded = await Promise.allSettled(CAR_IDS.map(id => loadCar(id)));
+  // Only your own car is loaded before the game starts. The light models the computer riders drive
+  // follow in the background; the big detailed ones (GLX pro, GLX pro 2, Trax) only when someone drives one.
   const templates = {};
-  loaded.forEach((r, i) => { if (r.status === 'fulfilled') templates[CAR_IDS[i]] = r.value; else console.warn('could not load', CAR_IDS[i], r.reason); });
+  const failed = new Set();
+  const onCarLoaded = [];   // (id) => {} once a model has arrived
+  function ensureCar(id, onProgress) {
+    if (!CARS[id] || templates[id] || failed.has(id)) return Promise.resolve(templates[id] || null);
+    return loadCar(id, onProgress).then((t) => { templates[id] = t; for (const f of onCarLoaded) f(id); return t; },
+      (e) => { failed.add(id); console.warn('could not load', id, e); return null; });
+  }
+  const BOT_CARS = CAR_IDS.filter(id => !CARS[id].heavy);
+  if (settings.car !== 'classic' && !CARS[settings.car]) settings.car = CAR_IDS[0];
+  if (CARS[settings.car]) {
+    status('Loading your sandrail...');
+    await ensureCar(settings.car, (f) => status(`Loading your sandrail... ${Math.round(f * 100)}%`));
+  }
   const availableCars = Object.keys(templates);
   if (!availableCars.length) console.warn('No .glb sandrails found in assets/, using the built-in model');
   // a visual + physics spec for a car id ('classic' or a missing model = the built-in procedural rail)
@@ -254,7 +265,7 @@ async function main() {
     return m;
   }
   const specFor = (id) => templates[id]?.spec || SANDRAIL_SPEC;
-  if (settings.car !== 'classic' && !templates[settings.car]) settings.car = availableCars[0] || 'classic';
+  if (settings.car !== 'classic' && !templates[settings.car]) settings.car = 'classic';
   status('Building sandrail...');
   let car = new SandrailPhysics(terrainData, specFor(settings.car));
   // face the biggest dune near the spawn bowl
@@ -300,8 +311,9 @@ async function main() {
     while (bots.length > n) { const b = bots.pop(); scene.remove(b.model.root); b.label.remove(); }
     while (bots.length < n) {
       // each computer car gets one of your models, the others before repeats
-      const pool = availableCars.filter(id => id !== settings.car);
-      const carId = pool.length ? pool[bots.length % pool.length] : (availableCars[0] || 'classic');
+      const ready = BOT_CARS.filter(id => templates[id]);
+      const pool = ready.filter(id => id !== settings.car);
+      const carId = pool.length ? pool[bots.length % pool.length] : (ready[0] || 'classic');
       const b = new AIDriver(terrainData, bots.length, specFor(carId));
       b.carId = carId;
       if (CARS[carId] && templates[carId]) b.tint = parseInt(CARS[carId].color.slice(1), 16);
@@ -332,7 +344,8 @@ async function main() {
       const m = makeVisual(carId, tint);
       scene.add(m.root);
       const label = document.createElement('div'); label.className = 'tag'; label.textContent = name; document.body.appendChild(label);
-      remotes.set(id, { model: m, name, tint, buf: [], label, prevContacts: [null, null, null, null], dist: [0, 0, 0, 0] });
+      remotes.set(id, { model: m, name, tint, carId, buf: [], label, prevContacts: [null, null, null, null], dist: [0, 0, 0, 0] });
+      ensureCar(carId);
       if (s) remotes.get(id).buf.push({ t: performance.now(), s });
       updatePlayerList();
     },
@@ -341,6 +354,7 @@ async function main() {
     onWorld: (world) => { if (netRemoteSetting) for (const [k, v] of Object.entries(world || {})) netRemoteSetting(k, v, null); else pendingWorld = world; },
     onCar: (id, carId) => {
       const r = remotes.get(id); if (!r) return;
+      r.carId = carId; ensureCar(carId);
       scene.remove(r.model.root); r.model = makeVisual(carId, r.tint); scene.add(r.model.root);
     },
     onState: (id, s) => { const r = remotes.get(id); if (r) { r.buf.push({ t: performance.now(), s }); if (r.buf.length > 30) r.buf.shift(); } },
@@ -356,6 +370,14 @@ async function main() {
   }
   setBotCount(settings.aiCount);
   updatePlayerList();
+  // a model arrived: other players' cars switch to it, computer riders are re-dealt once all light models are in
+  onCarLoaded.push((id) => {
+    for (const r of remotes.values()) if (r.carId === id) { scene.remove(r.model.root); r.model = makeVisual(id, r.tint); scene.add(r.model.root); }
+  });
+  Promise.all(BOT_CARS.map(id => ensureCar(id))).then(() => {
+    if (!bots.length) return;
+    const n = bots.length; setBotCount(0); setBotCount(n);
+  });
 
   // ---------- input ----------
   const keys = new Set();
@@ -745,7 +767,12 @@ async function main() {
       case 'night': setSun(timeOfDay); setLights(!!v); break;
       case 'wind': weather.windScale = v; weather.applyWind(); break;
       case 'aiCount': setBotCount(v); if (v) botAudio.start(); break;
-      case 'car': switchCar(v); setBotCount(0); setBotCount(settings.aiCount); break;
+      case 'car': {
+        const go = () => { if (settings.car !== v) return; switchCar(v); setBotCount(0); setBotCount(settings.aiCount); };
+        if (!CARS[v] || templates[v]) go();
+        else { toast('Loading ' + CARS[v].label + '...'); ensureCar(v, (f) => toast(`Loading ${CARS[v].label}... ${Math.round(f * 100)}%`)).then(go); }
+        break;
+      }
       case 'gravity': car.gravity = v; for (const b of bots) b.car.gravity = v; particles.gravity = v; break;
       case 'sandTex': applySandTex(v); break;
       case 'softness': car.softness = v; for (const b of bots) b.car.softness = v; break;
