@@ -43,16 +43,17 @@ const status = (t) => { const el = $('loading-status'); if (el) el.textContent =
 
 async function main() {
   // ---------- renderer ----------
-  // ?renderer=webgpu tries three.js's WebGPU renderer (experimental, still being ported); WebGL2 is the
-  // default and the automatic fallback when WebGPU is missing or fails to start
+  // M > Quality > Renderer (or ?renderer=webgpu / ?renderer=webgl) picks three.js's WebGPU renderer
+  // (experimental); WebGL2 is the default and the automatic fallback when WebGPU is missing or fails
   let renderer = null, gpu = null, gpuName = 'GPU';
-  if (params.get('renderer') === 'webgpu' && navigator.gpu) {
+  const wantGPU = (params.get('renderer') || settings.renderer) === 'webgpu';
+  if (wantGPU && navigator.gpu) {
     try {
       const W = await import('three/webgpu');
       renderer = new W.WebGPURenderer({ antialias: Q.msaa, powerPreference: 'high-performance' });
       await renderer.init();
       if (!renderer.backend.isWebGPUBackend) throw new Error('no WebGPU backend');
-      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), fx: await import('./gpu/effects-gpu.js'), car: await import('./gpu/car-gpu.js'), merge: await import('./gpu/merge-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
+      gpu = { W, terrain: await import('./gpu/terrain-gpu.js'), fx: await import('./gpu/effects-gpu.js'), car: await import('./gpu/car-gpu.js'), merge: await import('./gpu/merge-gpu.js'), post: await import('./gpu/post-gpu.js'), SkyMesh: (await import('three/addons/objects/SkyMesh.js')).SkyMesh };
       setLookBackend(gpu.car.convertCarLooks);
       const info = renderer.backend.adapter?.info || {};
       gpuName = 'WebGPU · ' + (info.description || `${info.vendor || ''} ${info.architecture || ''}`.trim() || 'GPU');
@@ -91,7 +92,7 @@ async function main() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.15, 150000);
   // screen effects (M > Quality); 'auto' follows the preset: all on at Ultra / High, only the colour grade at Low
-  const post = gpu ? { set() {}, setSize() {}, render() { renderer.render(scene, camera); } } : new PostFX(renderer, scene, camera, Q.msaa);
+  const post = gpu ? new gpu.post.PostFXGPU(renderer, scene, camera, Q.msaa) : new PostFX(renderer, scene, camera, Q.msaa);
   const POST_KEYS = { bloom: 'bloom', heatHaze: 'shimmer', colorGrade: 'grade', motionBlur: 'blur' };
   const postAuto = (k) => qName !== 'low' || k === 'colorGrade';
   function applyPost() { const o = {}; for (const [k, n] of Object.entries(POST_KEYS)) o[n] = settings[k] === 'auto' || settings[k] === undefined ? postAuto(k) : !!settings[k]; post.set(o); }
@@ -109,7 +110,6 @@ async function main() {
   su.turbidity.value = 2.2; su.rayleigh.value = 1.1; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.86;
   su.cloudCoverage.value = 0.12; su.cloudDensity.value = 0.35; su.cloudScale.value = 0.00012;
   scene.add(sky);
-  // (WebGPU port: the screen effects are not ported yet)
   const nightSky = gpu ? gpu.fx.makeNightSkyGPU(MOON_DIR) : makeNightSky();
   scene.add(nightSky);
   const SUN_I = 7.5;
@@ -824,6 +824,9 @@ async function main() {
       case 'volume': audio.setVolume(v); break;
       case 'quality': {
         const u = new URL(location.href); u.searchParams.delete('q'); location.href = u.toString(); break;
+      }
+      case 'renderer': {
+        const u = new URL(location.href); u.searchParams.delete('renderer'); location.href = u.toString(); break;
       }
       case 'renderScale': renderer.setPixelRatio(Q.pixelRatio * v); renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); break;
       case 'bloom': case 'heatHaze': case 'colorGrade': case 'motionBlur': applyPost(); break;

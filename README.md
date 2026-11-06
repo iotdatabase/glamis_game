@@ -140,6 +140,7 @@ Two keyboard keys and two controller inputs for each of the 18 actions in the ta
 | Setting | Choices |
 | --- | --- |
 | Graphics preset | Ultra (tuned for an RTX 5090), High, Low. Changes terrain detail, shadow maps, tire-track resolution and particle counts; reloads the game |
+| Renderer | WebGL 2 (default), WebGPU (experimental; needs a recent Chrome or Edge, falls back to WebGL 2 by itself; reloads the game) |
 | Render resolution | 50 to 200 % (above 100 % supersamples) |
 | Shadows | Off, Low, High, Ultra |
 | Photo sand textures | Off, Test patch at start, Everywhere |
@@ -198,6 +199,7 @@ Add these to the game's address, for example `http://localhost:8080/?q=high&ss=1
 | `tod=15` | Start at this hour of the day |
 | `tm=agx` or `tm=neutral` | Tone mapping (default ACES) |
 | `exp=0.6` | Exposure |
+| `renderer=webgpu` / `renderer=webgl` | Pick the renderer for this visit |
 
 ## Cars
 

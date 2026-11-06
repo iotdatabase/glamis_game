@@ -7,7 +7,7 @@ import { ACTIONS, loadBindings, resetBindings, assign, keyName, padName, padPres
 const KEY = 'glamis-settings-v1';
 
 export const DEFAULTS = {
-  quality: 'ultra', renderScale: 1, shadows: 'ultra', particles: 1,
+  quality: 'ultra', renderer: 'webgl', renderScale: 1, shadows: 'ultra', particles: 1,
   weather: 'clear', tod: 16.8, night: false, wind: 1,
   autoTrans: true, wheelieControl: true, steerAssist: true, steerSens: 1, volume: 0.8, camMode: 0, cockpitFov: 78, radarCockpit: 'hud', liveMirrors: true, driverArms: false, invertLook: false,
   car: 'pro',
@@ -56,6 +56,7 @@ export const SCHEMA = [
   { tab: 'Key bindings', items: [{ type: 'bindings' }] },
   { tab: 'Quality', items: [
     { key: 'quality', label: 'Graphics preset', type: 'choice', options: [['ultra', 'Ultra (RTX 5090)'], ['high', 'High'], ['low', 'Low']], hint: 'Terrain detail and tire-track resolution. Reloads the game.', reload: true },
+    { key: 'renderer', label: 'Renderer', type: 'choice', options: [['webgl', 'WebGL 2'], ['webgpu', 'WebGPU (experimental)']], hint: 'WebGPU needs a recent Chrome or Edge; falls back to WebGL 2 by itself. Reloads the game.', reload: true },
     { key: 'renderScale', label: 'Render resolution', type: 'range', min: 0.5, max: 2, step: 0.25, fmt: v => Math.round(v * 100) + '%', hint: 'Above 100% supersamples for the sharpest image.' },
     { key: 'shadows', label: 'Shadows', type: 'choice', options: [['off', 'Off'], ['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']] },
     { key: 'sandTex', label: 'Photo sand textures', type: 'choice', options: [['off', 'Off'], ['patch', 'Test patch at start'], ['all', 'Everywhere']], hint: 'Poly Haven scanned sand. Turn off for slower PCs.' },
