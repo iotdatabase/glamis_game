@@ -12,7 +12,7 @@ import { SandParticles } from './particles.js';
 import { GameRecorder } from './recorder.js';
 import { PostFX } from './post.js';
 import { Scenery } from './scenery.js';
-import { EngineAudio, audioRecordStream } from './audio.js';
+import { EngineAudio, audioRecordStream, setListener } from './audio.js';
 import { NetClient } from './net.js';
 import { AIDriver, resolveCarContacts } from './ai-driver.js';
 import { Weather } from './weather.js';
@@ -470,6 +470,7 @@ async function main() {
   renderer.domElement.addEventListener('wheel', (e) => { camDist = Math.max(0.5, Math.min(4, camDist * (1 + Math.sign(e.deltaY) * 0.1))); });
 
   let flipT = 0; const _upChk = new THREE.Vector3();
+  const prevComp = [], prevGround = [], _lf = new THREE.Vector3(), _lu = new THREE.Vector3(); let airT = 0, thumpT = 0, lastGear = 1;
   const padPrev = {};
   function readInput(dt) {
     const k = (id) => binds[id].keys.some(x => x && keys.has(x));
@@ -747,14 +748,16 @@ async function main() {
   $('gpu').textContent = `${gpuName} · ${qName.toUpperCase()} quality`;
   // the nearest bot's engine (uses assets/audio/nearby.* once that file exists); remote players
   // could get the same voice from the nearest r.buf state in the remote-cars loop
-  const botAudio = new EngineAudio({ nearby: true });
-  audio.setVolume(settings.volume); botAudio.setVolume(0);
-  window.__audio = { player: audio, bot: botAudio }; // tests: __audio.player.debug()
+  // the two nearest other cars (computer riders or players) are heard in 3D around the camera
+  const otherVoices = [new EngineAudio({ nearby: true, spatial: true }), new EngineAudio({ nearby: true, spatial: true })];
+  const botAudio = otherVoices[0];
+  audio.setVolume(settings.volume); for (const v of otherVoices) v.setVolume(0);
+  window.__audio = { player: audio, bot: botAudio, others: otherVoices }; // tests: __audio.player.debug()
   // the engine sound follows the driver's pedal, not throttleEff: wheelie control and steering
   // priority trim the engine torque all the time, and the recording should not drop out while W is held
   const pedal = (c) => c.gear === -1 && c.autoTrans ? c.input.brake : c.input.throttle;
   const _audioStart = audio.start.bind(audio);
-  audio.start = () => { _audioStart(); if (bots.length) botAudio.start(); };
+  audio.start = () => { _audioStart(); for (const v of otherVoices) v.start(); };
 
   // the HUD minimap is hidden in the cockpit view (it would cover the chart plotter and the right
   // mirror; the DuneNav screen in the dash shows the map there)
@@ -785,7 +788,7 @@ async function main() {
       case 'tod': timeOfDay = v; setSun(v); break;
       case 'night': setSun(timeOfDay); setLights(!!v); break;
       case 'wind': weather.windScale = v; weather.applyWind(); break;
-      case 'aiCount': setBotCount(v); if (v) botAudio.start(); break;
+      case 'aiCount': setBotCount(v); break;
       case 'car': {
         const go = () => { if (settings.car !== v) return; switchCar(v); setBotCount(0); setBotCount(settings.aiCount); };
         if (!CARS[v] || templates[v]) go();
@@ -901,11 +904,23 @@ async function main() {
       placeLabel(b.label, bc.pos, settings.labels && dCam < Math.min(450, 1.3 / scene.fog.density), `${b.name} · ${Math.round(dCam)} m`);
     }
     if (bots.length) resolveCarContacts([car, ...bots.map(b => b.car)], dt);
-    if (nearBot && botAudio.enabled) {
-      const g = Math.max(0, 1 - nearD / 300) ** 2;
-      botAudio.setVolume(settings.volume * g * 0.8);
-      botAudio.update(nearBot.car.rpm, pedal(nearBot.car), 0, 0);
-    } else if (botAudio.enabled) botAudio.setVolume(0);
+    // engines of the two nearest other cars, placed where they are (the panner does the distance)
+    {
+      const cands = [];
+      for (const b of bots) cands.push({ d: camera.position.distanceTo(b.car.pos), p: b.car.pos, rpm: b.car.rpm, thr: pedal(b.car) });
+      for (const r of remotes.values()) { const s = r.buf.length ? r.buf[r.buf.length - 1].s : null; if (s) cands.push({ d: camera.position.distanceTo(r.model.root.position), p: r.model.root.position, rpm: s.rpm || 1000, thr: s.thr || 0 }); }
+      cands.sort((a, b) => a.d - b.d);
+      otherVoices.forEach((v, i) => {
+        if (!v.enabled) return;
+        const c = cands[i];
+        if (!c || c.d > 600) { v.setVolume(0); return; }
+        v.setVolume(settings.volume * 0.9);
+        v.setPosition(c.p);
+        v.update(c.rpm, c.thr, 0, 0);
+      });
+      _lf.set(0, 0, -1).applyQuaternion(camera.quaternion); _lu.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      setListener(camera.position, _lf, _lu);
+    }
     weather.update(dt, camera, terrainData);
     sky.material.uniforms.time.value = nowT / 1000;
 
@@ -957,7 +972,20 @@ async function main() {
     camera.updateMatrixWorld();
     terrain.update(camera);
 
-    audio.update(car.rpm, pedal(car), roostAmt * 0.5, car.speed);
+    // landings and big suspension hits thump, gear changes clunk, flying sand patters on the body
+    let hit = 0;
+    car.wheels.forEach((w, i) => {
+      const dc = (w.comp - (prevComp[i] ?? w.comp)) / Math.max(dt, 1e-3); prevComp[i] = w.comp;
+      if (w.onGround && !prevGround[i] && airT > 0.25) hit = Math.max(hit, Math.min(1, airT * 0.6 + Math.abs(car.vel.y) * 0.08));
+      if (dc > 2.5) hit = Math.max(hit, Math.min(0.7, (dc - 2.5) * 0.12));
+      prevGround[i] = w.onGround;
+    });
+    airT = car.wheels.some(w => w.onGround) ? 0 : airT + dt;
+    thumpT -= dt;
+    if (hit > 0.08 && thumpT <= 0) { audio.thump(hit); thumpT = 0.14; }
+    if (car.gear !== lastGear) { if (car.gear >= 1 && lastGear >= 1) audio.shiftClunk(car.gear > lastGear); lastGear = car.gear; }
+    const slideAmt = car.wheels.reduce((a, w) => a + (w.onGround ? Math.max(0, Math.abs(w.vLat) - 2) : 0), 0);
+    audio.update(car.rpm, pedal(car), roostAmt * 0.5, car.speed, Math.min(1, roostAmt / 40 + slideAmt / 25), settings.wind ?? 1);
     net.update(dt, () => { const st = car.getState(); st.lt = lightsOn; return st; });
 
     // HUD

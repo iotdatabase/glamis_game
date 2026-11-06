@@ -1,5 +1,6 @@
 // Engine sound: recorded sandrail samples (assets/audio/), crossfaded by throttle and pitched by rpm,
-// plus synthesized roost and wind noise. Until the samples have loaded (or if they are missing) a
+// plus synthesized roost, sand spray, wind, landing thumps and gear-shift clunks (all generated here,
+// no sound files). Other cars' engines can be placed in 3D (spatial: true) around the listener. Until the samples have loaded (or if they are missing) a
 // synthesized blown big-block V8 plays instead.
 //
 // Sound files live in assets/audio/. Any of .mp3 .ogg .wav .m4a works; the name before the dot is what counts
@@ -27,6 +28,16 @@ let sharedCtx = null, sharedSamples = null;
 // the in-game video recorder taps the master of every engine (player and computer cars)
 const masters = [];
 let recDest = null;
+// the listener (the camera) for 3D engine voices
+export function setListener(pos, fwd, up) {
+  if (!sharedCtx) return;
+  const L = sharedCtx.listener, t = sharedCtx.currentTime;
+  if (L.positionX) {
+    L.positionX.setTargetAtTime(pos.x, t, 0.02); L.positionY.setTargetAtTime(pos.y, t, 0.02); L.positionZ.setTargetAtTime(pos.z, t, 0.02);
+    L.forwardX.setTargetAtTime(fwd.x, t, 0.02); L.forwardY.setTargetAtTime(fwd.y, t, 0.02); L.forwardZ.setTargetAtTime(fwd.z, t, 0.02);
+    L.upX.setTargetAtTime(up.x, t, 0.02); L.upY.setTargetAtTime(up.y, t, 0.02); L.upZ.setTargetAtTime(up.z, t, 0.02);
+  } else { L.setPosition(pos.x, pos.y, pos.z); L.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z); }
+}
 export function audioRecordStream() {
   if (!sharedCtx) return null;
   if (!recDest) { recDest = sharedCtx.createMediaStreamDestination(); for (const m of masters) m.connect(recDest); }
@@ -94,7 +105,9 @@ const knee = (r, k, lim) => (r - k) * (lim - k) > 0 ? lim - (lim - k) * Math.exp
 
 export class EngineAudio {
   // nearby: this engine voices another car (bot / remote player); it uses nearby.* when that file exists
-  constructor({ nearby = false } = {}) {
+  // spatial: placed in 3D with setPosition() (distance and direction from the listener)
+  constructor({ nearby = false, spatial = false } = {}) {
+    this.spatial = spatial;
     this.ctx = null;
     this.enabled = false;
     this.volume = 1;
@@ -118,8 +131,16 @@ export class EngineAudio {
     const ctx = sharedCtx;
     ctx.resume();
     this.ctx = ctx;
-    const master = ctx.createGain(); master.gain.value = 0.55 * this.volume; master.connect(ctx.destination);
-    masters.push(master); if (recDest) master.connect(recDest);
+    const master = ctx.createGain(); master.gain.value = 0.55 * this.volume;
+    let out = master;
+    if (this.spatial) {
+      // HRTF panning; the level falls off from ~12 m and is gone by ~600 m
+      out = new PannerNode(ctx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 12, rolloffFactor: 1.3, maxDistance: 600 });
+      master.connect(out);
+      this.panner = out;
+    }
+    out.connect(ctx.destination);
+    masters.push(out); if (recDest) out.connect(recDest);
     this.master = master;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(master);
     this.comp = comp;
@@ -162,6 +183,26 @@ export class EngineAudio {
     this.roost = mkNoise('bandpass', 1400, 0.6);
     this.wind = mkNoise('lowpass', 500, 0.5);
     this.intake = mkNoise('bandpass', 300, 1.2);
+    this.noiseBuf = nb;
+    if (!this.nearby) {
+      // high wind whistle past the cage and helmet, with slow gusts
+      this.windHi = mkNoise('bandpass', 2600, 1.6);
+      const gust = ctx.createOscillator(); gust.frequency.value = 0.23;
+      const gg = ctx.createGain(); gg.gain.value = 0; gust.connect(gg); gg.connect(this.wind.g.gain); gust.start();
+      this.gust = gg;
+      // sand spray: a fine hiss plus grains pattering on the body (a loop of sparse random clicks)
+      this.spray = mkNoise('highpass', 3500, 0.7);
+      const gb = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate), gd = gb.getChannelData(0);
+      for (let i = 0; i < 900; i++) {
+        const at = Math.floor(Math.random() * (gd.length - 400)), amp = 0.2 + Math.random() * 0.8, len = 30 + Math.random() * 160;
+        for (let j = 0; j < len; j++) gd[at + j] += (Math.random() * 2 - 1) * amp * Math.exp(-j / (len * 0.25));
+      }
+      const grit = ctx.createBufferSource(); grit.buffer = gb; grit.loop = true;
+      const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 2200; gf.Q.value = 0.8;
+      const gG = ctx.createGain(); gG.gain.value = 0;
+      grit.connect(gf); gf.connect(gG); gG.connect(comp); grit.start();
+      this.grit = { src: grit, g: gG };
+    }
     this.enabled = true;
 
     loadSamples(ctx).then((bufs) => this.useSamples(bufs));
@@ -209,7 +250,41 @@ export class EngineAudio {
     };
   }
 
-  update(rpm, throttle, roost, speed) {
+  setPosition(p) {
+    if (!this.panner) return;
+    const t = this.ctx.currentTime;
+    this.panner.positionX.setTargetAtTime(p.x, t, 0.03); this.panner.positionY.setTargetAtTime(p.y, t, 0.03); this.panner.positionZ.setTargetAtTime(p.z, t, 0.03);
+  }
+
+  // a suspension hit or a landing: a low thud plus a short burst of rattle; strength 0..1
+  thump(strength) {
+    if (!this.enabled || this.nearby || strength < 0.05) return;
+    const ctx = this.ctx, t = ctx.currentTime, s = Math.min(1, strength);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(95 + 40 * s, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.18);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9 * s, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    o.connect(g); g.connect(this.comp); o.start(t); o.stop(t + 0.35);
+    const n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.playbackRate.value = 0.6;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900 + 1400 * s;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.25 * s, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.12 + 0.1 * s);
+    n.connect(f); f.connect(ng); ng.connect(this.comp); n.start(t, Math.random()); n.stop(t + 0.3);
+  }
+
+  // gear change: a mechanical clunk through the chassis
+  shiftClunk(up) {
+    if (!this.enabled || this.nearby) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const n = ctx.createBufferSource(); n.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = up ? 520 : 420; f.Q.value = 2.5;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    n.connect(f); f.connect(g); g.connect(this.comp); n.start(t, Math.random()); n.stop(t + 0.12);
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.07);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.25, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    o.connect(og); og.connect(this.comp); o.start(t); o.stop(t + 0.1);
+  }
+
+  // spray: 0..1 how much sand is flying around the car (roost and slides); windK: weather wind 0..2
+  update(rpm, throttle, roost, speed, spray = 0, windK = 1) {
     if (!this.enabled) return;
     const t = this.ctx.currentTime, k = 0.05;
     if (this.samples) this.updateSamples(rpm, throttle, t);
@@ -228,8 +303,17 @@ export class EngineAudio {
       this.whineGain.gain.setTargetAtTime(sm * Math.min(rpm / 7500, 1) ** 2 * (0.012 + throttle * 0.03), t, k);
     }
     this.roost.g.gain.setTargetAtTime(Math.min(roost / 15, 1) * 0.35, t, 0.08);
-    this.wind.g.gain.setTargetAtTime(Math.min(speed / 50, 1) ** 2 * 0.25, t, 0.2);
-    this.wind.flt.frequency.setTargetAtTime(300 + speed * 20, t, 0.2);
+    const sp = Math.min(speed / 55, 1);
+    this.wind.g.gain.setTargetAtTime(sp * sp * 0.3 + 0.02 * windK, t, 0.2);
+    this.wind.flt.frequency.setTargetAtTime(300 + speed * 22, t, 0.2);
+    if (this.windHi) {
+      this.windHi.g.gain.setTargetAtTime(Math.max(0, (speed - 20) / 35) ** 2 * 0.07, t, 0.3);
+      this.windHi.flt.frequency.setTargetAtTime(1800 + speed * 25, t, 0.3);
+      this.gust.gain.setTargetAtTime((0.02 + sp * 0.06) * windK, t, 0.5);
+      this.spray.g.gain.setTargetAtTime(Math.min(1, spray) * 0.12, t, 0.06);
+      this.grit.g.gain.setTargetAtTime(Math.min(1, spray) * 0.5, t, 0.05);
+      this.grit.src.playbackRate.setTargetAtTime(0.7 + Math.min(1, spray) * 0.8, t, 0.1);
+    }
     this.intake.g.gain.setTargetAtTime((0.25 + 0.75 * sm) * throttle * 0.08 * rpm / 7500, t, k);
     this.intake.flt.frequency.setTargetAtTime(200 + rpm * 0.12, t, k);
   }

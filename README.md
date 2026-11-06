@@ -11,6 +11,7 @@ Glamis game is a free, open source, multiplayer dune-driving game built with [th
 - **Living sand:** every tire leaves ruts, paddle prints and berms that every car feels. Tracks are saved by the server and last 48 hours, so friends drive over your old lines.
 - **Ten sandrails** with suspension, steering and drivetrain that move with the physics, and a full cockpit view with live dash, GPS map and mirrors in the GLX pro.
 - **A living desert:** creosote and dry scrub on the flats between the dunes, camps with RVs, shade canopies, whip flags, porch lights and parked sandrails at Glamis Flats and Osborne Overlook, tall rooster tails from the paddle tires and dust that hangs in the air.
+- **Sound:** a recorded sandrail engine, wind that builds with speed (with gusts and a high whistle at 100+ mph), sand spraying and pattering on the body, thumps on landings and big hits, a clunk on every gear change, and the engines of the two nearest riders heard in 3D around you. Everything except the engine recording is generated in code.
 - **Screen effects:** glow on the sun, light bars and whips, heat shimmer over the far sand, a warm golden-hour colour grade and speed blur, each switchable in the menu.
 - **Weather and time:** clear to sandstorm, wind that drifts sand and dust, time of day, and night mode with a moonlit, starry sky, LED light bars and whip lights.
 - **Multiplayer and computer riders:** play with friends on your network or over the internet, and add up to 12 computer-driven sandrails.
