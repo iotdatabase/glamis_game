@@ -33,7 +33,7 @@ export const SANDRAIL_SPEC = {
   converterK: 105,                  // stall ~3800 rpm
   gears: [2.48, 1.48, 1.00], reverse: 2.08, finalDrive: 6.2,
   shiftUp: 7050, shiftDown: 3300, shiftTime: 0.22,
-  maxSteer: 0.52,                   // rad
+  maxSteer: 0.60,                   // rad (34 deg: ~20 ft turning radius at low speed)
   brakeFront: 2200, brakeRear: 3600,
   cdA: 0.95,
   // Hull points that can hit the ground (model coords)
@@ -189,7 +189,8 @@ export class SandrailPhysics {
     // ---- steering (speed sensitive, rate limited, Ackermann) ----
     // input steer +1 = turn right. Internally angle > 0 = turn left (toward +X).
     const vAbs = Math.max(Math.abs(vFwd), 1);
-    const steerMax = Math.min(s.maxSteer, s.wheelbase * 34 / (vAbs * vAbs) + 0.06);
+    // the lock still narrows with speed (no spin-outs at 80+ mph), but less than before: full lock turns harder
+    const steerMax = Math.min(s.maxSteer, s.wheelbase * 44 / (vAbs * vAbs) + 0.07);
     let steerTarget = -inp.steer * steerMax;
     // countersteer assist: steers into a slide like a driver would (toggle with G)
     if (this.steerAssist && Math.abs(vFwd) > 4) {
@@ -197,7 +198,7 @@ export class SandrailPhysics {
       const beta = Math.atan2(vLatBody, Math.abs(vFwd));
       steerTarget += Math.max(-0.35, Math.min(0.35, beta * 0.8)) * Math.sign(vFwd);
     }
-    const rate = 3.6 * dt;
+    const rate = 5.5 * dt;                // rad/s at the wheels: centre to full lock in ~0.1 s
     this.steerAngle += Math.max(-rate, Math.min(rate, steerTarget - this.steerAngle));
     const sa = this.steerAngle;
     if (Math.abs(sa) > 1e-4) {
@@ -430,7 +431,9 @@ export class SandrailPhysics {
       // Lateral: tires sitting in the sand push a wall of sand sideways, so side grip
       // grows with sinkage and barely falls off once sliding (low Cy = flat top).
       const plow = 1 + Math.min(0.15, w.sink * 2);
-      if (w.front) { muX = 0.55; muY = 1.0 * plow; kPeak = 0.12; aPeak = 0.16; Bx = 9; Cx = 1.5; By = 7.5; Cy = 1.15; }
+      // (ribbed fronts bite harder sideways at low speed: with only ~31 % of the weight on them the spool rear
+      // pushed the car wide in tight turns; the extra grip fades out by ~50 mph so fast turns stay stable)
+      if (w.front) { muX = 0.55; muY = (1.0 + 0.35 * (1 - smooth(8, 22, Math.abs(vFwd)))) * plow; kPeak = 0.12; aPeak = 0.16; Bx = 9; Cx = 1.5; By = 7.5; Cy = 1.15; }
       else {
         const bite = 1 + 1.4 * (w.digSink / 0.20);
         muX = Math.min(1.12 * bite, 1.45); muY = 0.98 * plow; kPeak = 0.28; aPeak = 0.12; Bx = 4.2; Cx = 1.35; By = 9.5; Cy = 1.12;

@@ -554,7 +554,7 @@ async function main() {
     }
     if (analog) input.steer = steerT;
     else {
-      const rate = ((steerT === 0 || Math.sign(steerT) !== Math.sign(input.steer)) ? 7 : 4.2) * settings.steerSens;
+      const rate = ((steerT === 0 || Math.sign(steerT) !== Math.sign(input.steer)) ? 9 : 6.5) * settings.steerSens;
       input.steer += Math.max(-rate * dt, Math.min(rate * dt, steerT - input.steer));
     }
     // keyboard throttle ramps in quickly (feathering by tapping still works)
