@@ -5,6 +5,8 @@
 // World axes: +X = east, +Z = south, +Y = up. Units are meters.
 // Origin is lat 32.955 N, lon 115.11 W, between Gecko Road and Glamis.
 
+import { PLACES, placeXZ } from './places.js';
+
 export class TerrainData {
   constructor(meta, fineU16, coarseU16) {
     this.meta = meta;
@@ -19,9 +21,10 @@ export class TerrainData {
     for (let i = 0; i < fineU16.length; i++) this.fine[i] = fineU16[i] * s + b;
     this.coarse = new Float32Array(coarseU16.length);
     for (let i = 0; i < coarseU16.length; i++) this.coarse[i] = coarseU16[i] * s + b;
-    // taller dunes: the relief above the surrounding ground (a ~1 km average) is raised by RELIEF_GAIN
-    exaggerate(this.fine, this.fineN, this.fineCell);
-    exaggerate(this.coarse, this.coarseN, this.coarseCell);
+    // the famous hills and bowls stand taller: their relief above the surrounding ground is raised by RELIEF_GAIN
+    const spots = PLACES.filter(p => p.kind === 'hill' || p.kind === 'bowl').map(p => placeXZ(p, meta));
+    exaggerate(this.fine, this.fineN, this.fineCell, this.fineSize, spots);
+    exaggerate(this.coarse, this.coarseN, this.coarseCell, this.coarseSize, spots);
     // Blend band (meters) at the edge of the detailed area.
     this.blend = 600;
     this._out = { h: 0, dx: 0, dz: 0 };
@@ -117,12 +120,14 @@ export class TerrainData {
   }
 }
 
-// ---- Dune height: the real terrain's relief, raised ----
-// Each spot's height above the local average ground (a ~1 km wide blur) is multiplied by RELIEF_GAIN,
-// so dunes grow 50 % taller while the valleys and the map's overall lie stay put. Faces that would
+// ---- Taller dunes at the famous hills and bowls ----
+// Around each named hill and bowl (places.js) the height above the local average ground (a ~1 km wide
+// blur) is multiplied by RELIEF_GAIN, so those dunes stand 50 % taller while the valleys and the map's
+// overall lie stay put. Full gain within BOOST_IN of the spot, easing back to the real height by BOOST_OUT. Faces that would
 // end up steeper than SLOPE_CAP grow less, so slip faces stay steep sand slopes instead of walls.
 export const RELIEF_GAIN = 1.5;
 const RELIEF_RADIUS = 1000;              // m
+const BOOST_IN = 450, BOOST_OUT = 1100;   // m
 const SLOPE_CAP = Math.tan(35 * Math.PI / 180);
 function blurBox(a, n, r, tmp) {         // in-place separable box blur, clamped edges
   const w = 1 / (2 * r + 1);
@@ -151,7 +156,7 @@ function bilinearRow(g, m, F, n, y, out) {
     out[x] = a + (b - a) * fy;
   }
 }
-function exaggerate(h, n, cell) {
+function exaggerate(h, n, cell, size, spots) {
   // local average ground, worked out on a ~32 m grid (it is very smooth)
   const F = Math.max(1, Math.round(32 / cell)), m = Math.ceil(n / F);
   const lo = new Float32Array(m * m), tmp = new Float32Array(m * m);
@@ -172,11 +177,25 @@ function exaggerate(h, n, cell) {
     }
   }
   min3(gain, q, t2); blurBox(gain, q, 1, t2);
-  // h = ground + (h - ground) x gain, both read bilinearly from their grids, one row at a time
-  const rowB = new Float32Array(n), rowG = new Float32Array(n);
+  // h = ground + (h - ground) x (1 + (gain - 1) x boost), boost 1 near a famous spot easing to 0 (smoothstep);
+  // only the rows and columns near a spot are touched
+  const rowB = new Float32Array(n), rowG = new Float32Array(n), bo = new Float32Array(n), half = size / 2;
   for (let y = 0; y < n; y++) {
+    const wz = (y + 0.5) * cell - half;
+    const near = spots.filter(c => Math.abs(c.z - wz) < BOOST_OUT);
+    if (!near.length) continue;
     bilinearRow(lo, m, F, n, y, rowB); bilinearRow(gain, q, G, n, y, rowG);
-    for (let x = 0, i = y * n; x < n; x++, i++) h[i] = rowB[x] + (h[i] - rowB[x]) * rowG[x];
+    for (const c of near) {
+      const x0 = Math.max(0, Math.floor((c.x - BOOST_OUT + half) / cell)), x1 = Math.min(n - 1, Math.ceil((c.x + BOOST_OUT + half) / cell));
+      for (let x = x0; x <= x1; x++) {
+        const dx = (x + 0.5) * cell - half - c.x, dz = wz - c.z, d2 = dx * dx + dz * dz;
+        if (d2 >= BOOST_OUT * BOOST_OUT) continue;
+        let t = (BOOST_OUT - Math.sqrt(d2)) / (BOOST_OUT - BOOST_IN);
+        t = t >= 1 ? 1 : t * t * (3 - 2 * t);
+        if (t > bo[x]) bo[x] = t;
+      }
+    }
+    for (let x = 0, i = y * n; x < n; x++, i++) if (bo[x] > 0) { h[i] = rowB[x] + (h[i] - rowB[x]) * (1 + (rowG[x] - 1) * bo[x]); bo[x] = 0; }
   }
 }
 
@@ -243,8 +262,8 @@ export const DUNE = {
   wind: [0.94 / Math.hypot(0.94, 0.34), 0.34 / Math.hypot(0.94, 0.34)],
   sets: [
     // spacing (m), max height (m), amp noise freq/offset, break-up freq/offset, warp m / freq / offset
-    { lambda: 225, amp: 18, fa: 1 / 700, oa: [5.3, -2.1], fb: 1 / 230, ob: [-7.7, 3.9], warp: 45, fw: 1 / 320, ow: [1.1, 8.4], e0: 0.12, e1: 0.55, skew: 0.55 },
-    { lambda: 70, amp: 3.9, fa: 1 / 260, oa: [-3.3, 12.7], fb: 1 / 90, ob: [9.1, -4.4], warp: 14, fw: 1 / 110, ow: [-6.2, -1.7], e0: 0.2, e1: 0.7, skew: 0.4 },
+    { lambda: 150, amp: 12, fa: 1 / 700, oa: [5.3, -2.1], fb: 1 / 230, ob: [-7.7, 3.9], warp: 45, fw: 1 / 320, ow: [1.1, 8.4], e0: 0.12, e1: 0.55, skew: 0.55 },
+    { lambda: 47, amp: 2.6, fa: 1 / 260, oa: [-3.3, 12.7], fb: 1 / 90, ob: [9.1, -4.4], warp: 14, fw: 1 / 110, ow: [-6.2, -1.7], e0: 0.2, e1: 0.7, skew: 0.4 },
   ],
 };
 function sstep(e0, e1, x) { // smoothstep and its derivative
