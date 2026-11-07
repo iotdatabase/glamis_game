@@ -19,6 +19,9 @@ export class TerrainData {
     for (let i = 0; i < fineU16.length; i++) this.fine[i] = fineU16[i] * s + b;
     this.coarse = new Float32Array(coarseU16.length);
     for (let i = 0; i < coarseU16.length; i++) this.coarse[i] = coarseU16[i] * s + b;
+    // taller dunes: the relief above the surrounding ground (a ~1 km average) is raised by RELIEF_GAIN
+    exaggerate(this.fine, this.fineN, this.fineCell);
+    exaggerate(this.coarse, this.coarseN, this.coarseCell);
     // Blend band (meters) at the edge of the detailed area.
     this.blend = 600;
     this._out = { h: 0, dx: 0, dz: 0 };
@@ -114,6 +117,69 @@ export class TerrainData {
   }
 }
 
+// ---- Dune height: the real terrain's relief, raised ----
+// Each spot's height above the local average ground (a ~1 km wide blur) is multiplied by RELIEF_GAIN,
+// so dunes grow 50 % taller while the valleys and the map's overall lie stay put. Faces that would
+// end up steeper than SLOPE_CAP grow less, so slip faces stay steep sand slopes instead of walls.
+export const RELIEF_GAIN = 1.5;
+const RELIEF_RADIUS = 1000;              // m
+const SLOPE_CAP = Math.tan(35 * Math.PI / 180);
+function blurBox(a, n, r, tmp) {         // in-place separable box blur, clamped edges
+  const w = 1 / (2 * r + 1);
+  for (let y = 0; y < n; y++) {
+    const o = y * n; let acc = 0;
+    for (let k = -r; k <= r; k++) acc += a[o + (k < 0 ? 0 : k >= n ? n - 1 : k)];
+    for (let x = 0; x < n; x++) { tmp[o + x] = acc * w; const xa = x + r + 1, xs = x - r; acc += a[o + (xa >= n ? n - 1 : xa)] - a[o + (xs < 0 ? 0 : xs)]; }
+  }
+  for (let x = 0; x < n; x++) {
+    let acc = 0;
+    for (let k = -r; k <= r; k++) acc += tmp[(k < 0 ? 0 : k >= n ? n - 1 : k) * n + x];
+    for (let y = 0; y < n; y++) { a[y * n + x] = acc * w; const ya = y + r + 1, ys = y - r; acc += tmp[(ya >= n ? n - 1 : ya) * n + x] - tmp[(ys < 0 ? 0 : ys) * n + x]; }
+  }
+}
+function min3(a, n, tmp) {                // 3x3 running minimum
+  for (let y = 0; y < n; y++) { const o = y * n; for (let x = 0; x < n; x++) { const l = a[o + (x > 0 ? x - 1 : 0)], c = a[o + x], r = a[o + (x < n - 1 ? x + 1 : x)]; tmp[o + x] = l < c ? (l < r ? l : r) : (c < r ? c : r); } }
+  for (let y = 0; y < n; y++) { const u = (y > 0 ? y - 1 : 0) * n, o = y * n, d = (y < n - 1 ? y + 1 : y) * n; for (let x = 0; x < n; x++) { const l = tmp[u + x], c = tmp[o + x], r = tmp[d + x]; a[o + x] = l < c ? (l < r ? l : r) : (c < r ? c : r); } }
+}
+// one row (y) of an m x m grid laid over the n x n one (F cells per grid cell), read bilinearly
+function bilinearRow(g, m, F, n, y, out) {
+  const s = 1 / F, v = Math.min(m - 1, Math.max(0, (y + 0.5) * s - 0.5)), y0 = Math.floor(v), y1 = Math.min(m - 1, y0 + 1), fy = v - y0;
+  const r0 = y0 * m, r1 = y1 * m;
+  for (let x = 0; x < n; x++) {
+    const u = Math.min(m - 1, Math.max(0, (x + 0.5) * s - 0.5)), x0 = Math.floor(u), x1 = Math.min(m - 1, x0 + 1), fx = u - x0;
+    const a = g[r0 + x0] + (g[r0 + x1] - g[r0 + x0]) * fx, b = g[r1 + x0] + (g[r1 + x1] - g[r1 + x0]) * fx;
+    out[x] = a + (b - a) * fy;
+  }
+}
+function exaggerate(h, n, cell) {
+  // local average ground, worked out on a ~32 m grid (it is very smooth)
+  const F = Math.max(1, Math.round(32 / cell)), m = Math.ceil(n / F);
+  const lo = new Float32Array(m * m), tmp = new Float32Array(m * m);
+  for (let y = 0; y < n; y++) { const r = Math.floor(y / F) * m; for (let x = 0; x < n; x++) lo[r + Math.floor(x / F)] += h[y * n + x]; }
+  for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) lo[y * m + x] /= Math.min(F, n - y * F) * Math.min(F, n - x * F);
+  const r = Math.max(1, Math.round(RELIEF_RADIUS / (cell * F) / 2));
+  blurBox(lo, m, r, tmp); blurBox(lo, m, r, tmp);       // two box passes: a soft, tent-shaped average
+  // gain: full on ordinary slopes; on faces already steep it is held to SLOPE_CAP / slope, so they end
+  // up no steeper than the cap. Worked out on a ~8 m grid from the steepest slope in each cell, then
+  // spread to the neighbours (min) and smoothed so there are no creases.
+  const G = Math.max(1, Math.round(8 / cell)), q = Math.ceil(n / G);
+  const gain = new Float32Array(q * q).fill(RELIEF_GAIN), t2 = new Float32Array(q * q), k2 = (SLOPE_CAP * 2 * cell) ** 2, g15 = RELIEF_GAIN * RELIEF_GAIN;
+  for (let y = 1; y < n - 1; y++) {
+    const gr = Math.floor(y / G) * q;
+    for (let x = 1, i = y * n + 1; x < n - 1; x++, i++) {
+      const gx = h[i + 1] - h[i - 1], gz = h[i + n] - h[i - n], g2 = gx * gx + gz * gz;
+      if (g2 * g15 > k2) { const k = Math.max(1, Math.sqrt(k2 / g2)), j = gr + Math.floor(x / G); if (k < gain[j]) gain[j] = k; }
+    }
+  }
+  min3(gain, q, t2); blurBox(gain, q, 1, t2);
+  // h = ground + (h - ground) x gain, both read bilinearly from their grids, one row at a time
+  const rowB = new Float32Array(n), rowG = new Float32Array(n);
+  for (let y = 0; y < n; y++) {
+    bilinearRow(lo, m, F, n, y, rowB); bilinearRow(gain, q, G, n, y, rowG);
+    for (let x = 0, i = y * n; x < n; x++, i++) h[i] = rowB[x] + (h[i] - rowB[x]) * rowG[x];
+  }
+}
+
 function clampi(i, n) { return i < 0 ? 0 : i >= n ? n - 1 : i; }
 const _w = [0, 0, 0, 0], _d = [0, 0, 0, 0], _w2 = [0, 0, 0, 0], _d2 = [0, 0, 0, 0];
 let flip = false;
@@ -177,8 +243,8 @@ export const DUNE = {
   wind: [0.94 / Math.hypot(0.94, 0.34), 0.34 / Math.hypot(0.94, 0.34)],
   sets: [
     // spacing (m), max height (m), amp noise freq/offset, break-up freq/offset, warp m / freq / offset
-    { lambda: 150, amp: 12, fa: 1 / 700, oa: [5.3, -2.1], fb: 1 / 230, ob: [-7.7, 3.9], warp: 45, fw: 1 / 320, ow: [1.1, 8.4], e0: 0.12, e1: 0.55, skew: 0.55 },
-    { lambda: 47, amp: 2.6, fa: 1 / 260, oa: [-3.3, 12.7], fb: 1 / 90, ob: [9.1, -4.4], warp: 14, fw: 1 / 110, ow: [-6.2, -1.7], e0: 0.2, e1: 0.7, skew: 0.4 },
+    { lambda: 225, amp: 18, fa: 1 / 700, oa: [5.3, -2.1], fb: 1 / 230, ob: [-7.7, 3.9], warp: 45, fw: 1 / 320, ow: [1.1, 8.4], e0: 0.12, e1: 0.55, skew: 0.55 },
+    { lambda: 70, amp: 3.9, fa: 1 / 260, oa: [-3.3, 12.7], fb: 1 / 90, ob: [9.1, -4.4], warp: 14, fw: 1 / 110, ow: [-6.2, -1.7], e0: 0.2, e1: 0.7, skew: 0.4 },
   ],
 };
 function sstep(e0, e1, x) { // smoothstep and its derivative

@@ -133,7 +133,7 @@ async function main() {
   let weather = null;
   function setSun(hours) {
     const night = !!settings.night;
-    let el, warm;
+    let el, warm, noonF = 0;
     const wx = weather ? weather.p : { sun: 1, env: 1 };
     if (night) {
       // full moon: cool, dim light from high in the sky
@@ -147,15 +147,17 @@ async function main() {
       // simple solar path for Glamis in spring: rises E, sets W, max elevation ~62 deg
       const t = (hours - 6) / 13.6; // 0 sunrise .. 1 sunset
       el = Math.max(-0.05, Math.sin(Math.PI * t)) * 62 * Math.PI / 180;
+      noonF = Math.min(1, Math.max(0, (el * 180 / Math.PI - 35) / 25));
       const az = (90 + 180 * t) * Math.PI / 180; // from north, clockwise
       sunDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
       su.sunPosition.value.copy(sunDir);
       warm = 1 - Math.min(1, Math.max(0, (el * 180 / Math.PI - 4) / 45));
       sun.color.setRGB(1, 0.97 - warm * 0.2, 0.92 - warm * 0.38);
       sun.intensity = SUN_I * wx.sun * Math.min(1, Math.max(0.05, el * 180 / Math.PI / 8));
-      hemi.intensity = 0.42 * wx.env;
+      hemi.intensity = 0.42 * wx.env * (1 - 0.2 * noonF);   // less flat sky fill at midday: the ripples keep their relief
     }
-    renderer.toneMappingExposure = night ? EXPO * 0.95 / 0.45 : EXPO;
+    // a touch less exposure under a high sun, so the bright sand stays out of the tone curve's white shoulder
+    renderer.toneMappingExposure = night ? EXPO * 0.95 / 0.45 : EXPO * (1 - 0.12 * noonF);
     light.el = el; light.warm = warm; light.night = night;
     // the cars' orange lift / cabin fill follow the daylight
     setLookDaylight(night ? 0 : Math.min(1, Math.max(0, el * 180 / Math.PI / 8)) * wx.sun);

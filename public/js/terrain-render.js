@@ -736,7 +736,10 @@ SandSurface sandSurface(vec3 wp){
   float n3 = vnoiseD(p*0.33).x;
   vec3 col = mix(sandA, sandB, smoothstep(0.3, 0.7, n1));
   col *= 0.96 + 0.06*n2 + 0.02*n3;
-  col *= 1.0 + 0.04*ripShade; // sun-bleached crests a touch lighter
+  // sun-bleached crests a touch lighter, troughs a touch darker. With a high sun the ripples throw no
+  // shading of their own and washed out, so this tone step grows toward midday (golden hour unchanged)
+  float noon = smoothstep(0.45, 0.85, uSunDir.y);
+  col *= 1.0 + (0.04 + 0.26*noon)*ripShade;
   col *= clamp(texLum, 0.55, 1.5);
   // interdune: coarse terrain sits above local fine terrain in hollows
   float hollow = 0.0;
@@ -757,7 +760,7 @@ SandSurface sandSurface(vec3 wp){
   col *= 1.0 - 0.1*oldCover;
   // track floors also slightly shadowed (cavity)
   float cavity = clamp(vDeformDepth*6.0, 0.0, 1.0);
-  o.ao = 1.0 - 0.2*cavity - 0.12*hollow;
+  o.ao = (1.0 - 0.2*cavity - 0.12*hollow) * (1.0 - 0.6*noon*max(0.0, -ripShade));   // ripple troughs see less sky
   o.albedo = col;
   o.roughness = mix(0.93, 0.98, churn) - 0.06*slip;
 

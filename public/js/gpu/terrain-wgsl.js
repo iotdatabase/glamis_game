@@ -338,7 +338,9 @@ fn sandAll(fine: texture_2d<f32>, coarse: texture_2d<f32>, gradF: texture_2d<f32
   let n3 = vnoiseD(p * 0.33).x;
   var col = mix(sandA, sandB, smoothstep(0.3, 0.7, n1));
   col *= 0.96 + 0.06 * n2 + 0.02 * n3;
-  col *= 1.0 + 0.04 * ripShade;
+  // ripple tone step grows toward midday (a high sun casts no ripple shading of its own)
+  let noon = smoothstep(0.45, 0.85, sunDir.y);
+  col *= 1.0 + (0.04 + 0.26 * noon) * ripShade;
   col *= clamp(texLum, 0.55, 1.5);
   let hc = bsplineH(coarse, ci, p);
   let hf = baseHeight(fine, coarse, fi, ci, p);
@@ -350,7 +352,7 @@ fn sandAll(fine: texture_2d<f32>, coarse: texture_2d<f32>, gradF: texture_2d<f32
   col = mix(col, col * vec3<f32>(0.86, 0.82, 0.78), churn);
   col *= 1.0 - 0.1 * oldCover;
   let cavity = clamp(deformDepth * 6.0, 0.0, 1.0);
-  let ao = 1.0 - 0.2 * cavity - 0.12 * hollow;
+  let ao = (1.0 - 0.2 * cavity - 0.12 * hollow) * (1.0 - 0.6 * noon * max(0.0, -ripShade));
   let rough = mix(0.93, 0.98, churn) - 0.06 * slip;
 
   // ---- baked long-range dune shadows ----
