@@ -433,7 +433,7 @@ export class SandrailPhysics {
       const plow = 1 + Math.min(0.15, w.sink * 2);
       // (ribbed fronts bite harder sideways at low speed: with only ~31 % of the weight on them the spool rear
       // pushed the car wide in tight turns; the extra grip fades out by ~50 mph so fast turns stay stable)
-      if (w.front) { muX = 0.55; muY = (1.0 + 0.35 * (1 - smooth(8, 22, Math.abs(vFwd)))) * plow; kPeak = 0.12; aPeak = 0.16; Bx = 9; Cx = 1.5; By = 7.5; Cy = 1.15; }
+      if (w.front) { muX = 0.55; muY = (1.0 + 0.2 * (1 - smooth(8, 22, Math.abs(vFwd)))) * plow; kPeak = 0.12; aPeak = 0.16; Bx = 9; Cx = 1.5; By = 7.5; Cy = 1.15; }
       else {
         const bite = 1 + 1.4 * (w.digSink / 0.20);
         muX = Math.min(1.12 * bite, 1.45); muY = 0.98 * plow; kPeak = 0.28; aPeak = 0.12; Bx = 4.2; Cx = 1.35; By = 9.5; Cy = 1.12;
