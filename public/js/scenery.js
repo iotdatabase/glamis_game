@@ -1,5 +1,4 @@
-// Life on the dunes: creosote and dry scrub on the flats between the dunes (streamed around the
-// player, instanced), and camps at Glamis Flats and Osborne Overlook with RVs, shade canopies,
+// Life on the dunes: camps at Glamis Flats and Osborne Overlook with RVs, shade canopies,
 // whip flags, porch lights that come on at night and parked sandrails.
 // Scenery is for looks only: the cars drive through it.
 import * as THREE from 'three';
@@ -8,45 +7,12 @@ import { PLACES, placeXZ } from './places.js';
 
 const hash = (x, z, s) => { const v = Math.sin(x * 127.1 + z * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
 
-function bushGeometry(seed, parts, squash) {
-  const gs = [];
-  for (let i = 0; i < parts; i++) {
-    const g = new THREE.IcosahedronGeometry(0.5, 1);
-    const a = hash(seed, i, 1) * Math.PI * 2, r = 0.35 * hash(seed, i, 2);
-    g.scale(0.7 + 0.5 * hash(seed, i, 3), squash * (0.6 + 0.6 * hash(seed, i, 4)), 0.7 + 0.5 * hash(seed, i, 5));
-    g.translate(Math.cos(a) * r, 0.25 + 0.25 * hash(seed, i, 6), Math.sin(a) * r);
-    gs.push(g);
-  }
-  const m = mergeGeometries(gs);
-  // lumpy, twiggy silhouette
-  const p = m.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 0.7 + 0.6 * hash(x * 9, z * 9, y * 9);
-    p.setXYZ(i, x * k, Math.max(0, y * k), z * k);
-  }
-  m.computeVertexNormals();
-  return m;
-}
-
 export class Scenery {
-  // opts: { budget (max bushes), radius (m), shadows }
+  // opts: { radius (m), shadows, parked }
   constructor(scene, terrain, opts) {
     this.scene = scene; this.terrain = terrain; this.opts = opts;
     this.group = new THREE.Group(); scene.add(this.group);
     this.center = null; this.enabled = true;
-    // two bush kinds: green creosote and pale dry scrub
-    const kinds = [
-      { geo: bushGeometry(1, 9, 0.9), mat: new THREE.MeshStandardMaterial({ color: 0x3f3f22, roughness: 1 }), share: 0.6, size: [0.8, 1.7] },
-      { geo: bushGeometry(2, 6, 0.6), mat: new THREE.MeshStandardMaterial({ color: 0x8a7650, roughness: 1 }), share: 0.4, size: [0.4, 0.9] },
-    ];
-    this.bushes = kinds.map(k => {
-      const n = Math.ceil(opts.budget * k.share);
-      const mesh = new THREE.InstancedMesh(k.geo, k.mat, n);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.count = 0; mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = false;
-      this.group.add(mesh);
-      return { mesh, n, size: k.size };
-    });
     this.camps = [];
     this.flags = [];
     this.lamps = [];
@@ -57,34 +23,6 @@ export class Scenery {
     const t = this.terrain, e = 2;
     const dx = (t.height(x + e, z) - t.height(x - e, z)) / (2 * e), dz = (t.height(x, z + e) - t.height(x, z - e)) / (2 * e);
     return Math.hypot(dx, dz);
-  }
-
-  // ---------- bushes, re-dealt around the player when they have moved far enough ----------
-  updateBushes(x, z) {
-    const R = this.opts.radius, C = 40, t = this.terrain;
-    const counts = this.bushes.map(() => 0);
-    for (let cx = Math.floor((x - R) / C); cx <= Math.floor((x + R) / C); cx++) {
-      for (let cz = Math.floor((z - R) / C); cz <= Math.floor((z + R) / C); cz++) {
-        for (let i = 0; i < 6; i++) {
-          const px = (cx + hash(cx, cz, i * 2)) * C, pz = (cz + hash(cx, cz, i * 2 + 1)) * C;
-          const d2 = (px - x) ** 2 + (pz - z) ** 2;
-          if (d2 > R * R) continue;
-          const h = t.height(px, pz);
-          // flats between the dunes: gentle slope and lower than the sand around it
-          if (this.slope(px, pz) > 0.16) continue;
-          const around = (t.height(px + 22, pz) + t.height(px - 22, pz) + t.height(px, pz + 22) + t.height(px, pz - 22)) * 0.25;
-          if (h > around - 0.15) continue;
-          const k = hash(cx, cz, i + 40) < 0.6 ? 0 : 1, b = this.bushes[k];
-          if (counts[k] >= b.n) continue;
-          const s = b.size[0] + (b.size[1] - b.size[0]) * hash(cx, cz, i + 50);
-          this._q.setFromAxisAngle(this._up, hash(cx, cz, i + 60) * Math.PI * 2);
-          this._s.set(s * (0.8 + 0.4 * hash(cx, cz, i + 70)), s, s * (0.8 + 0.4 * hash(cx, cz, i + 80)));
-          this._p.set(px, h - 0.08 * s, pz);
-          b.mesh.setMatrixAt(counts[k]++, this._m.compose(this._p, this._q, this._s));
-        }
-      }
-    }
-    this.bushes.forEach((b, k) => { b.mesh.count = counts[k]; b.mesh.instanceMatrix.needsUpdate = true; });
   }
 
   // ---------- camps ----------
@@ -216,10 +154,6 @@ export class Scenery {
 
   update(dt, camPos, night) {
     if (!this.enabled) return;
-    if (!this.center || Math.hypot(camPos.x - this.center.x, camPos.z - this.center.z) > this.opts.radius * 0.25) {
-      this.center = { x: camPos.x, z: camPos.z };
-      this.updateBushes(camPos.x, camPos.z);
-    }
     for (const c of this.camps) {
       const d = Math.hypot(camPos.x - c.x, camPos.z - c.z);
       c.root.visible = d < 3000;

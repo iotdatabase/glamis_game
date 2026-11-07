@@ -1,4 +1,4 @@
-// WebGPU version of the screen effects (post.js): bloom, heat shimmer, speed blur and the golden-hour
+// WebGPU version of the screen effects (post.js): bloom, heat shimmer and the golden-hour
 // colour grade with vignette, on three's RenderPipeline. Same interface as PostFX; with every effect off
 // the scene is drawn straight to the screen.
 import * as THREE from 'three';
@@ -10,7 +10,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 // screen v from the top, and the far sand is just below it (v a little larger)
 const FINAL_WGSL = /* wgsl */`
 fn postFinal(t: texture_2d<f32>, s: sampler, uvIn: vec2<f32>, res: vec2<f32>, tm: f32, horizon: f32,
-             shimmer: f32, blur: f32, grade: f32, golden: f32, night: f32) -> vec4<f32> {
+             shimmer: f32, grade: f32, golden: f32, night: f32) -> vec4<f32> {
   var uv = uvIn;
   if (shimmer > 0.0) {
     let d = uv.y - horizon;
@@ -23,19 +23,11 @@ fn postFinal(t: texture_2d<f32>, s: sampler, uvIn: vec2<f32>, res: vec2<f32>, tm
     }
   }
   var col = textureSampleLevel(t, s, uv, 0.0).rgb;
-  if (blur > 0.001) {
-    let c = uv - 0.5;
-    let e = smoothstep(0.18, 0.75, length(c * vec2<f32>(res.x / res.y, 1.0)));
-    let stepv = c * blur * e * 0.018;
-    var acc = col; var w = 1.0;
-    for (var i = 1; i <= 7; i++) { let fi = f32(i); acc += textureSampleLevel(t, s, uv - stepv * fi, 0.0).rgb * (1.0 - fi * 0.1); w += 1.0 - fi * 0.1; }
-    col = acc / w;
-  }
   if (grade > 0.0) {
     let l = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
     var g = col;
-    g = mix(g, g * g * (3.0 - 2.0 * g), 0.22);
-    g = mix(vec3<f32>(l), g, 1.08);
+    g = mix(g, g * g * (3.0 - 2.0 * g), 0.32);
+    g = mix(vec3<f32>(l), g, 1.16);
     let warm = vec3<f32>(1.035, 1.0, 0.94) + golden * vec3<f32>(0.05, 0.005, -0.07);
     g *= mix(vec3<f32>(0.985, 0.995, 1.025), warm, smoothstep(0.15, 0.8, l));
     g = mix(g, g * vec3<f32>(0.94, 0.98, 1.08), night * 0.6);
@@ -56,18 +48,18 @@ const finalFn = wgslFn(FINAL_WGSL);
 export class PostFXGPU {
   constructor(renderer, scene, camera, msaa) {
     this.renderer = renderer; this.scene = scene; this.camera = camera; this.msaa = msaa;
-    this.opts = { bloom: true, shimmer: true, grade: true, blur: true };
+    this.opts = { bloom: true, shimmer: true, grade: true };
     this.u = {
-      res: uniform(new THREE.Vector2(1, 1)), tm: uniform(0), horizon: uniform(0.5), shimmer: uniform(0), blur: uniform(0),
+      res: uniform(new THREE.Vector2(1, 1)), tm: uniform(0), horizon: uniform(0.5), shimmer: uniform(0),
       grade: uniform(0), golden: uniform(0), night: uniform(0),
     };
     this.pipeline = new RenderPipeline(renderer);
     this.pipeline.outputColorTransform = false;
-    this.t = 0; this.blurNow = 0; this.built = '';
+    this.t = 0; this.built = '';
     this._h = new THREE.Vector3(); this._f = new THREE.Vector3();
   }
 
-  get active() { const o = this.opts; return o.bloom || o.shimmer || o.grade || o.blur; }
+  get active() { const o = this.opts; return o.bloom || o.shimmer || o.grade; }
   set(opts) { Object.assign(this.opts, opts); }
   setSize() { /* the pipeline follows the renderer's size */ }
 
@@ -82,7 +74,7 @@ export class PostFXGPU {
     const ldr = convertToTexture(renderOutput(hdr));
     const u = this.u;
     this.pipeline.outputNode = finalFn({ t: ldr, s: sampler(ldr), uvIn: screenUV, res: u.res, tm: u.tm, horizon: u.horizon,
-      shimmer: u.shimmer, blur: u.blur, grade: u.grade, golden: u.golden, night: u.night });
+      shimmer: u.shimmer, grade: u.grade, golden: u.golden, night: u.night });
     this.pipeline.needsUpdate = true;
   }
 
@@ -98,15 +90,13 @@ export class PostFXGPU {
     u.tm.value = this.t;
     this.renderer.getDrawingBufferSize(u.res.value);
     u.shimmer.value = o.shimmer ? day * Math.min(1, Math.max(0, (light.el * 180 / Math.PI - 12) / 25)) * (cockpit ? 0.7 : 1) : 0;
-    const target = o.blur ? Math.min(1, Math.max(0, (Math.abs(speed) - 22) / 30)) : 0;
-    this.blurNow += (target - this.blurNow) * Math.min(1, dt * 3);
-    u.blur.value = this.blurNow;
     u.grade.value = o.grade ? 1 : 0;
     u.golden.value = light.night ? 0 : light.warm;
     u.night.value = light.night ? 1 : 0;
+    // glow only at night (LEDs, whips, lamps): by day the bright sky and sand bloomed into a milky haze
     if (this.bloomNode) {
-      this.bloomNode.threshold.value = light.night ? 2.2 : 6.0;
-      this.bloomNode.strength.value = light.night ? 0.45 : 0.22;
+      this.bloomNode.threshold.value = 2.2;
+      this.bloomNode.strength.value = light.night ? 0.45 : 0;
     }
     this.pipeline.render();
   }

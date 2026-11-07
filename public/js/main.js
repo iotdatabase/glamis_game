@@ -67,7 +67,7 @@ async function main() {
   renderer.setPixelRatio(Q.pixelRatio * (Number(params.get('ss')) || settings.renderScale));
   renderer.setSize(window.innerWidth, window.innerHeight);
   // ACES at 0.53 (the look the sand and sky are tuned for); ?tm=neutral|agx&exp=x tries the others
-  const TM = { neutral: [THREE.NeutralToneMapping, 0.8], agx: [THREE.AgXToneMapping, 0.9] }[params.get('tm')] || [THREE.ACESFilmicToneMapping, 0.53];
+  const TM = { neutral: [THREE.NeutralToneMapping, 0.8], agx: [THREE.AgXToneMapping, 0.9] }[params.get('tm')] || [THREE.ACESFilmicToneMapping, 0.45];
   const EXPO = Number(params.get('exp')) || TM[1];
   renderer.toneMapping = TM[0];
   renderer.toneMappingExposure = EXPO;
@@ -93,7 +93,7 @@ async function main() {
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.15, 150000);
   // screen effects (M > Quality); 'auto' follows the preset: all on at Ultra / High, only the colour grade at Low
   const post = gpu ? new gpu.post.PostFXGPU(renderer, scene, camera, Q.msaa) : new PostFX(renderer, scene, camera, Q.msaa);
-  const POST_KEYS = { bloom: 'bloom', heatHaze: 'shimmer', colorGrade: 'grade', motionBlur: 'blur' };
+  const POST_KEYS = { bloom: 'bloom', heatHaze: 'shimmer', colorGrade: 'grade' };
   const postAuto = (k) => qName !== 'low' || k === 'colorGrade';
   function applyPost() { const o = {}; for (const [k, n] of Object.entries(POST_KEYS)) o[n] = settings[k] === 'auto' || settings[k] === undefined ? postAuto(k) : !!settings[k]; post.set(o); }
   applyPost();
@@ -155,7 +155,7 @@ async function main() {
       sun.intensity = SUN_I * wx.sun * Math.min(1, Math.max(0.05, el * 180 / Math.PI / 8));
       hemi.intensity = 0.42 * wx.env;
     }
-    renderer.toneMappingExposure = EXPO * (night ? 0.95 / 0.53 : 1);
+    renderer.toneMappingExposure = night ? EXPO * 0.95 / 0.45 : EXPO;
     light.el = el; light.warm = warm; light.night = night;
     // the cars' orange lift / cabin fill follow the daylight
     setLookDaylight(night ? 0 : Math.min(1, Math.max(0, el * 180 / Math.PI / 8)) * wx.sun);
@@ -185,7 +185,7 @@ async function main() {
     if (envRT) envRT.dispose();
     envRT = pmrem.fromScene(envScene, 0, 0.1, 2000);
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 0.6 * wx.env;
+    scene.environmentIntensity = 0.45 * wx.env;   // less sky in the reflections: black paint stays black
     if (terrain) { terrain.material.envMap = envRT.texture; terrain.material.envMapIntensity = 0.38 * wx.env; terrain.material.needsUpdate = true; }
     // fog colour: a pale blue-grey desert haze, darker than the horizon sky (fogging into the near-white sky turned the far dunes white)
     const fogC = night ? new THREE.Color(0.30, 0.40, 0.62) : new THREE.Color().setRGB(0.50, 0.47, 0.48).lerp(new THREE.Color(0.63, 0.50, 0.37), warm * 0.6);
@@ -829,7 +829,7 @@ async function main() {
         const u = new URL(location.href); u.searchParams.delete('renderer'); location.href = u.toString(); break;
       }
       case 'renderScale': renderer.setPixelRatio(Q.pixelRatio * v); renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); break;
-      case 'bloom': case 'heatHaze': case 'colorGrade': case 'motionBlur': applyPost(); break;
+      case 'bloom': case 'heatHaze': case 'colorGrade': applyPost(); break;
       case 'scenery': scenery.setEnabled(v !== false); break;
       case 'shadows': applyShadows(v); break;
       case 'particles': particles.emitScale = v; break;
